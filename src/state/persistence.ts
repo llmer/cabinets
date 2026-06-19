@@ -34,6 +34,13 @@ function migrateCabinet(raw: Partial<Cabinet>): Cabinet {
     shelves: raw.shelves == null ? 0 : Number(raw.shelves),
     toeKick: raw.toeKick !== false,
     construction: raw.construction === "framed" ? "framed" : "frameless",
+    // Pre-overlay projects rendered framed=inset, frameless=full; preserve that look.
+    overlay:
+      raw.overlay === "inset" || raw.overlay === "full"
+        ? raw.overlay
+        : raw.construction === "framed"
+          ? "inset"
+          : "full",
     ...(Array.isArray(raw.drawerHeights) ? { drawerHeights: raw.drawerHeights } : {}),
   };
 }

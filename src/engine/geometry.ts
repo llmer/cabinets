@@ -15,6 +15,23 @@ export function isFramed(c: Cabinet): boolean {
   return (c.construction || "frameless") === "framed";
 }
 
+export function isInset(c: Cabinet): boolean {
+  return c.overlay === "inset";
+}
+
+/**
+ * Width of the border the inset front is recessed behind: the face-frame stile
+ * when framed, otherwise the carcass edge (frameless inset). Unused for overlay.
+ */
+export function effectiveFrameWidth(c: Cabinet, s: Settings): number {
+  return isFramed(c) ? s.frameWidth || 1.5 : carcassThickness(s);
+}
+
+/** Vertical spacing between stacked inset fronts: a mid rail (framed) or a reveal. */
+export function insetStackGap(c: Cabinet, s: Settings): number {
+  return isFramed(c) ? s.frameWidth || 1.5 : s.reveal;
+}
+
 /** Desk and opening fronts produce a box with no bottom and no back. */
 export function isOpenBox(c: Cabinet): boolean {
   return c.frontStyle === "desk" || c.frontStyle === "opening";
@@ -50,6 +67,7 @@ export function cabinetGeometry(c: Cabinet, s: Settings): CabinetGeometry {
     carcassDepth: carcassDepth(c, s),
     faceHeight: faceHeight(c, s),
     framed: isFramed(c),
+    inset: isInset(c),
     openBox: isOpenBox(c),
   };
 }

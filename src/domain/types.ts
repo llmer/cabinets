@@ -19,8 +19,16 @@ export type CabinetType = "base" | "wall" | "tall";
  */
 export type FrontStyle = "doors" | "drawers" | "door_drawer" | "desk" | "opening";
 
-/** Frameless (Euro / 32 mm) full-overlay, or a hardwood face frame with inset fronts. */
+/** Box construction: frameless (Euro / 32 mm) or a hardwood face frame. */
 export type Construction = "frameless" | "framed";
+
+/**
+ * How the door/drawer front sits relative to the box/frame, independent of
+ * construction:
+ * - full  : full-overlay — the front sits proud, covering the face to a reveal
+ * - inset : the front sits flush, recessed inside the opening
+ */
+export type Overlay = "full" | "inset";
 
 export type Units = "in" | "mm";
 
@@ -39,6 +47,8 @@ export interface Cabinet {
   /** Base/tall only. true = stands on a recessed toe kick; false = sits flush. */
   toeKick: boolean;
   construction: Construction;
+  /** Full-overlay (proud) or inset (flush) fronts. */
+  overlay: Overlay;
   /** Optional per-drawer FRONT heights (inches). When absent, an even split is used. */
   drawerHeights?: number[];
 }
@@ -166,6 +176,7 @@ export interface CabinetGeometry {
   carcassDepth: number;
   faceHeight: number;
   framed: boolean;
+  inset: boolean;
   openBox: boolean;
 }
 

@@ -22,23 +22,37 @@ export function frontStyleLabel(f: FrontStyle): string {
 export interface ConstructionInfo {
   allFramed: boolean;
   allFrameless: boolean;
+  allFull: boolean;
+  allInset: boolean;
   label: string;
   note: string;
 }
 
-const NOTE_FRAMELESS =
-  'Construction assumptions — frameless / Euro. 3/4" plywood throughout, no face frame. Applied 3/4" back (sides & top/bottom set 3/4" shallower so finished depth holds). Doors & drawer fronts are full-overlay, covering the box face to a 1/8" reveal. Base & tall boxes follow the toe-kick setting per cabinet. Verify against your own method before cutting.';
-const NOTE_FRAMED =
-  'Construction assumptions — face frame (framed). 3/4" plywood box (sides, bottom/top or stretchers, applied 3/4" back). A 1 1/2"-wide 3/4" hardwood face frame (stiles, rails, mid rails) is glued to the front; that stock is listed separately and is NOT nested in the plywood sheets. Doors and drawer fronts are inset, sized to the openings with a 1/8" reveal. Verify against your own method before cutting.';
-const NOTE_MIXED =
-  "Construction assumptions — mixed. Each cabinet carries its own frameless or face-frame setting (see its tag). Frameless cabinets are full-overlay 3/4\" plywood; face-frame cabinets add 1 1/2\" hardwood stiles & rails with inset fronts (listed separately, not nested in the sheets). Verify against your own method before cutting.";
+const BOX_FRAMELESS =
+  'Frameless / Euro — 3/4" plywood throughout, no face frame; applied 3/4" back (sides & top/bottom set 3/4" shallower so finished depth holds).';
+const BOX_FRAMED =
+  'Face frame — 3/4" plywood box plus a 1 1/2"-wide 3/4" hardwood face frame (stiles, rails, mid rails) glued to the front; that stock is listed separately and is NOT nested in the plywood sheets.';
+const BOX_MIXED =
+  "Mixed construction — each cabinet carries its own frameless / face-frame setting (see its tag); hardwood face-frame stock is listed separately, not nested in the sheets.";
 
-/** Summarize whether the run is all frameless, all framed, or mixed. */
+const FIT_FULL = ' Fronts are full-overlay, covering the box/frame to a 1/8" reveal.';
+const FIT_INSET = ' Fronts are inset, sized to the openings with a 1/8" reveal.';
+const FIT_MIXED = " Front fit (full-overlay vs inset) is set per cabinet.";
+const VERIFY = " Verify against your own method before cutting.";
+
+/** Summarize the run's construction + front fit (all-framed / all-inset / mixed). */
 export function constructionInfo(cabinets: Cabinet[]): ConstructionInfo {
   const allFramed =
     cabinets.length > 0 && cabinets.every((c) => (c.construction || "frameless") === "framed");
   const allFrameless = cabinets.every((c) => (c.construction || "frameless") !== "framed");
-  const label = allFramed ? "face frame" : allFrameless ? "frameless" : "mixed";
-  const note = allFrameless ? NOTE_FRAMELESS : allFramed ? NOTE_FRAMED : NOTE_MIXED;
-  return { allFramed, allFrameless, label, note };
+  const allFull = cabinets.every((c) => c.overlay !== "inset");
+  const allInset = cabinets.length > 0 && cabinets.every((c) => c.overlay === "inset");
+
+  const constr = allFramed ? "face frame" : allFrameless ? "frameless" : "mixed";
+  const fit = allFull ? "full overlay" : allInset ? "inset" : "mixed fit";
+  const label = `${constr} · ${fit}`;
+
+  const box = allFrameless ? BOX_FRAMELESS : allFramed ? BOX_FRAMED : BOX_MIXED;
+  const fitNote = allFull ? FIT_FULL : allInset ? FIT_INSET : FIT_MIXED;
+  return { allFramed, allFrameless, allFull, allInset, label, note: box + fitNote + VERIFY };
 }

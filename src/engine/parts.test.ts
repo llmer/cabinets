@@ -91,13 +91,14 @@ describe("genParts — drawer bank generates fronts and boxes", () => {
   });
 });
 
-describe("genParts — face frame", () => {
+describe("genParts — face frame, inset", () => {
   const c = makeCabinet("base", "B3", {
     width: 24,
     height: 34.5,
     frontStyle: "doors",
     doorCount: 2,
     construction: "framed",
+    overlay: "inset",
   });
   const { parts } = genParts(c, noBoxes);
 
@@ -115,6 +116,45 @@ describe("genParts — face frame", () => {
     // opening width 24 - 2*1.5 = 21; doorW = (21 - 0.125*3)/2 = 10.3125 -> r3 10.313
     expect(door.length).toBe(10.313);
     expect(door.bandAll).toBe(true);
+  });
+});
+
+describe("genParts — overlay vs inset are independent of construction", () => {
+  it("face frame + full overlay: frame parts present, doors sized full-overlay, no mid rails", () => {
+    const c = makeCabinet("base", "B", {
+      width: 24,
+      height: 34.5,
+      frontStyle: "doors",
+      doorCount: 2,
+      construction: "framed",
+      overlay: "full",
+    });
+    const { parts } = genParts(c, noBoxes);
+    // face frame still listed
+    expect(find(parts, "Face-frame stile")).toBeTruthy();
+    expect(find(parts, "Face-frame mid rail")).toBeUndefined();
+    // doors are full-overlay sized (cover the frame), not inset-in-opening
+    const door = find(parts, "Door")!;
+    expect(door.length).toBe(11.875); // (24 - 0.125 - 0.125)/2
+    expect(door.width).toBe(29.875); // boxH - reveal
+  });
+
+  it("frameless + inset: no frame parts, doors inset in the box opening", () => {
+    const c = makeCabinet("base", "B", {
+      width: 24,
+      height: 34.5,
+      frontStyle: "doors",
+      doorCount: 2,
+      construction: "frameless",
+      overlay: "inset",
+    });
+    const { parts } = genParts(c, noBoxes);
+    expect(find(parts, "Face-frame stile")).toBeUndefined();
+    const door = find(parts, "Door")!;
+    // opening = interior 24 - 2*0.75 = 22.5; doorW = (22.5 - 0.125*3)/2 = 11.0625 -> 11.063
+    expect(door.length).toBe(11.063);
+    // door height = (boxH - 2*0.75) - 2*0.125 = 28.5 - 0.25 = 28.25
+    expect(door.width).toBe(28.25);
   });
 });
 

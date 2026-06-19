@@ -4,8 +4,11 @@ import {
   boxHeight,
   cabinetGeometry,
   carcassThickness,
+  effectiveFrameWidth,
   faceHeight,
+  insetStackGap,
   isFramed,
+  isInset,
   isOpenBox,
 } from "./geometry";
 import { getDrawerHeights } from "./drawers";
@@ -72,66 +75,74 @@ export function genParts(c: Cabinet, s: Settings): CabinetParts {
   }
 
   /* ---------- fronts ---------- */
+  const inset = isInset(c);
+
   if (c.frontStyle === "opening") {
     // APPLIANCE OPENING: no front. In framed mode, surround the bay.
     if (framed) {
       add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
       add("Face-frame top rail", 1, r3(W - 2 * ff), ff, "faceFrame", "none");
     }
-  } else if (framed) {
-    // FACE-FRAME stock — solid hardwood, ripped from boards (not nested).
-    const railLen = r3(W - 2 * ff);
-    add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
-    add("Face-frame top rail", 1, railLen, ff, "faceFrame", "none");
-    if (c.frontStyle !== "desk")
-      add("Face-frame bottom rail", 1, railLen, ff, "faceFrame", "none");
-    const mid =
-      c.frontStyle === "drawers"
-        ? c.drawerCount - 1
-        : c.frontStyle === "door_drawer"
-          ? 1
-          : c.frontStyle === "desk"
-            ? c.drawerCount - 1
-            : 0;
-    if (mid > 0) add("Face-frame mid rail", mid, railLen, ff, "faceFrame", "none");
-
-    // INSET fronts — sit inside the frame openings with a 1/8" reveal.
-    const insR = 0.125;
-    const openW = r3(W - 2 * ff);
-    const frontW = r3(openW - 2 * insR);
-    const doorW = (nd: number) => r3((openW - insR * (nd + 1)) / nd);
-    if (c.frontStyle === "desk" || c.frontStyle === "drawers") {
-      const hs = getDrawerHeights(c, s);
-      hs.forEach((dh) => add("Drawer front", 1, frontW, r3(dh - 2 * insR), "front", "all"));
-    } else if (c.frontStyle === "door_drawer") {
-      const dh = getDrawerHeights(c, s)[0];
-      add("Drawer front", 1, frontW, r3(dh - 2 * insR), "front", "all");
-      const openHdoor = r3(boxH - 3 * ff - dh);
-      const nd = c.doorCount;
-      add("Door", nd, doorW(nd), r3(openHdoor - 2 * insR), "front", "all");
-    } else {
-      const openH = r3(boxH - 2 * ff);
-      const nd = c.doorCount;
-      add("Door", nd, doorW(nd), r3(openH - 2 * insR), "front", "all");
-    }
   } else {
-    // FRAMELESS full-overlay fronts.
-    const faceW = r3(W - rev);
-    const faceH = r3(boxH - rev);
-    if (c.frontStyle === "desk" || c.frontStyle === "drawers") {
-      const hs = getDrawerHeights(c, s);
-      hs.forEach((dh) => add("Drawer front", 1, faceW, dh, "front", "all"));
-    } else if (c.frontStyle === "door_drawer") {
-      const dh = getDrawerHeights(c, s)[0];
-      add("Drawer front", 1, faceW, dh, "front", "all");
-      const doorH = r3(faceH - dh - rev);
-      const nd = c.doorCount;
-      const dw = r3((faceW - (nd - 1) * rev) / nd);
-      add("Door", nd, dw, doorH, "front", "all");
+    // FACE-FRAME stock — solid hardwood (not nested). Mid rails only divide
+    // inset openings; full-overlay fronts span a single opening.
+    if (framed) {
+      const railLen = r3(W - 2 * ff);
+      add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
+      add("Face-frame top rail", 1, railLen, ff, "faceFrame", "none");
+      if (c.frontStyle !== "desk")
+        add("Face-frame bottom rail", 1, railLen, ff, "faceFrame", "none");
+      const mid = !inset
+        ? 0
+        : c.frontStyle === "drawers" || c.frontStyle === "desk"
+          ? c.drawerCount - 1
+          : c.frontStyle === "door_drawer"
+            ? 1
+            : 0;
+      if (mid > 0) add("Face-frame mid rail", mid, railLen, ff, "faceFrame", "none");
+    }
+
+    if (inset) {
+      // INSET fronts — recessed inside the openings with a reveal all round.
+      const insR = rev;
+      const effFF = effectiveFrameWidth(c, s); // frame stile (framed) or box edge (frameless)
+      const gap = insetStackGap(c, s); // mid rail (framed) or reveal (frameless)
+      const openW = r3(W - 2 * effFF);
+      const frontW = r3(openW - 2 * insR);
+      const doorW = (nd: number) => r3((openW - insR * (nd + 1)) / nd);
+      if (c.frontStyle === "desk" || c.frontStyle === "drawers") {
+        const hs = getDrawerHeights(c, s);
+        hs.forEach((dh) => add("Drawer front", 1, frontW, r3(dh - 2 * insR), "front", "all"));
+      } else if (c.frontStyle === "door_drawer") {
+        const dh = getDrawerHeights(c, s)[0];
+        add("Drawer front", 1, frontW, r3(dh - 2 * insR), "front", "all");
+        const openHdoor = r3(boxH - 2 * effFF - gap - dh);
+        const nd = c.doorCount;
+        add("Door", nd, doorW(nd), r3(openHdoor - 2 * insR), "front", "all");
+      } else {
+        const openH = r3(boxH - 2 * effFF);
+        const nd = c.doorCount;
+        add("Door", nd, doorW(nd), r3(openH - 2 * insR), "front", "all");
+      }
     } else {
-      const nd = c.doorCount;
-      const dw = r3((faceW - (nd - 1) * rev) / nd);
-      add("Door", nd, dw, faceH, "front", "all");
+      // FULL-OVERLAY fronts — sit proud, covering the box/frame to a reveal.
+      const faceW = r3(W - rev);
+      const faceH = r3(boxH - rev);
+      if (c.frontStyle === "desk" || c.frontStyle === "drawers") {
+        const hs = getDrawerHeights(c, s);
+        hs.forEach((dh) => add("Drawer front", 1, faceW, dh, "front", "all"));
+      } else if (c.frontStyle === "door_drawer") {
+        const dh = getDrawerHeights(c, s)[0];
+        add("Drawer front", 1, faceW, dh, "front", "all");
+        const doorH = r3(faceH - dh - rev);
+        const nd = c.doorCount;
+        const dw = r3((faceW - (nd - 1) * rev) / nd);
+        add("Door", nd, dw, doorH, "front", "all");
+      } else {
+        const nd = c.doorCount;
+        const dw = r3((faceW - (nd - 1) * rev) / nd);
+        add("Door", nd, dw, faceH, "front", "all");
+      }
     }
   }
 

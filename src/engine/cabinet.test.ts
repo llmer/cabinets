@@ -105,15 +105,29 @@ describe("drawer-height model", () => {
     expect(getDrawerHeights(c, S)).toEqual([9.875, 9.875, 9.875]);
   });
 
-  it("framed budget accounts for rails", () => {
+  it("framed inset budget accounts for rails", () => {
     const c = makeCabinet("base", "B", {
       width: 18,
       height: 34.5,
       frontStyle: "drawers",
       drawerCount: 3,
       construction: "framed",
+      overlay: "inset",
     });
     // boxH 30 - 2*1.5 - (3-1)*1.5 = 30 - 3 - 3 = 24
     expect(drawerStackBudget(c, S)).toBe(24);
+  });
+
+  it("framed full-overlay budget ignores rails (fronts cover the frame)", () => {
+    const c = makeCabinet("base", "B", {
+      width: 18,
+      height: 34.5,
+      frontStyle: "drawers",
+      drawerCount: 3,
+      construction: "framed",
+      overlay: "full",
+    });
+    // same as frameless overlay: faceH 29.875 - (3-1)*0.125 = 29.625
+    expect(drawerStackBudget(c, S)).toBe(29.625);
   });
 });

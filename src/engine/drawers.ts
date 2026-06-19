@@ -1,5 +1,11 @@
 import { Cabinet, Settings } from "@/domain/types";
-import { boxHeight, faceHeight, isFramed } from "./geometry";
+import {
+  boxHeight,
+  effectiveFrameWidth,
+  faceHeight,
+  insetStackGap,
+  isInset,
+} from "./geometry";
 import { r3 } from "./units";
 
 /**
@@ -19,29 +25,31 @@ const DOOR_DRAWER_MIN_DOOR = 6;
 export function drawerStackBudget(c: Cabinet, s: Settings): number {
   const boxH = boxHeight(c, s);
   const rev = s.reveal;
-  const ff = s.frameWidth || 1.5;
+  const n = c.drawerCount;
 
   if (c.frontStyle === "desk") {
     // Drawers sit at the top over an OPEN knee space — cap the stack so at
     // least ~22" of knee clearance remains (not the full face height).
-    const n = c.drawerCount;
     return r3(Math.max(n * 2, boxH - DESK_KNEE_CLEARANCE));
   }
 
-  if (isFramed(c)) {
+  if (isInset(c)) {
+    // Inset fronts live inside the openings. Top/bottom are bounded by the
+    // frame (framed) or the box edge (frameless); fronts are separated by mid
+    // rails (framed) or reveals (frameless).
+    const ff = effectiveFrameWidth(c, s);
+    const gap = insetStackGap(c, s);
     if (c.frontStyle === "door_drawer") {
-      // top + mid + bottom rail + >=6" door opening
-      return r3(boxH - 3 * ff - DOOR_DRAWER_MIN_DOOR);
+      return r3(boxH - 2 * ff - gap - DOOR_DRAWER_MIN_DOOR);
     }
-    const n = c.drawerCount;
-    return r3(boxH - 2 * ff - (n - 1) * ff);
+    return r3(boxH - 2 * ff - (n - 1) * gap);
   }
 
+  // Full overlay (frameless, or framed with doors covering the frame).
   const faceH = faceHeight(c, s);
   if (c.frontStyle === "door_drawer") {
     return r3(faceH - rev - DOOR_DRAWER_MIN_DOOR); // leave >=6" for the doors below
   }
-  const n = c.drawerCount;
   return r3(faceH - (n - 1) * rev);
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { color, font } from "@/theme";
 import { CabinetScene } from "@/three/CabinetScene";
 import { useStore } from "@/state/store";
-import { Button, MonoLabel, Serif } from "@/components/ui";
+import { Button, MonoLabel, Serif, Toggle } from "@/components/ui";
 import { constructionInfo } from "@/engine/labels";
 
 export function ThreeView() {
@@ -10,6 +10,8 @@ export function ThreeView() {
   const settings = useStore((s) => s.project.settings);
   const showFronts = useStore((s) => s.showFronts);
   const setShowFronts = useStore((s) => s.setShowFronts);
+  const setConstructionAll = useStore((s) => s.setConstructionAll);
+  const setOverlayAll = useStore((s) => s.setOverlayAll);
   const ci = constructionInfo(cabinets);
 
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -74,6 +76,21 @@ export function ThreeView() {
           </Button>
         </div>
       </div>
+
+      {/* Construction + fit, drivable here so the render reacts live */}
+      <div className="no-print" style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span style={{ fontFamily: font.mono, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: color.faint }}>Construction</span>
+          <Toggle active={ci.allFrameless} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setConstructionAll("frameless")}>Frameless</Toggle>
+          <Toggle active={ci.allFramed} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setConstructionAll("framed")}>Face frame</Toggle>
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <span style={{ fontFamily: font.mono, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: color.faint }}>Front fit</span>
+          <Toggle active={ci.allFull} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setOverlayAll("full")}>Full overlay</Toggle>
+          <Toggle active={ci.allInset} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setOverlayAll("inset")}>Inset</Toggle>
+        </div>
+      </div>
+
       <div
         ref={mountRef}
         style={{ position: "relative", width: "100%", height: 600, border: `1px solid ${color.border}`, borderRadius: 8, overflow: "hidden", background: color.page, cursor: failed ? "default" : "grab", display: failed ? "flex" : "block", alignItems: "center", justifyContent: "center" }}

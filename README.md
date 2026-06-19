@@ -42,8 +42,10 @@ and remove. Counter and upper guide lines.
 **Front styles** — doors, drawer bank, drawer-over-doors, open desk (drawers over
 an open knee space), and an appliance/fridge opening (no front, bottom or back).
 
-**Construction** — frameless (Euro / full-overlay) or face frame (hardwood stiles
-& rails with inset fronts), per cabinet or set across the whole run.
+**Construction** — frameless (Euro) or face frame (hardwood stiles & rails),
+**independent** of the front fit (**full overlay** vs **inset**). All four
+combinations work — including face-frame full-overlay, the most common American
+kitchen style — set per cabinet or across the whole run.
 
 **Cut list** — every part grouped by cabinet with quantities, dimensions, material
 tag and edge-banding. Includes drawer-box parts (sides, front/back, bottom).
@@ -97,10 +99,12 @@ only when cabinets or settings actually change.
 - Dimensions are stored in **inches**; the mm toggle is display-only — the math
   never changes.
 - **Frameless**: 3/4" plywood box; applied 3/4" back (sides & top/bottom set 3/4"
-  shallower so finished depth holds); full-overlay fronts to a 1/8" reveal.
-- **Face frame**: 3/4" ply box + a 1 1/2" hardwood face frame (listed separately
-  by the linear foot, *not* nested in the plywood sheets); inset fronts sized to
-  the openings with a 1/8" reveal.
+  shallower so finished depth holds).
+- **Face frame**: adds a 1 1/2" hardwood face frame (listed separately by the
+  linear foot, *not* nested in the plywood sheets).
+- **Front fit** is a separate axis: *full overlay* fronts cover the box/frame to
+  a 1/8" reveal; *inset* fronts sit flush inside the openings (recessed behind
+  the face-frame stiles when framed, or the box edge when frameless).
 - Base cabinets use two 4" top stretchers; wall/tall use a full top.
 - Drawer boxes default to 1/2" ply sides with a 1/4" captured bottom, 1" narrower
   than the opening for side-mount slides. Toggle off in Settings.

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Cabinet, Settings } from "@/domain/types";
 import { colorFor, three as T } from "@/theme";
-import { boxHeight, backThickness, carcassThickness, isFramed } from "@/engine/geometry";
+import { boxHeight, backThickness, carcassThickness, isFramed, isInset } from "@/engine/geometry";
 import { getDrawerHeights } from "@/engine/drawers";
 
 type ViewPreset = "iso" | "front" | "top";
@@ -247,14 +247,20 @@ export class CabinetScene {
       }
     };
 
-    if (framed) {
-      const ff = S.frameWidth || 1.5;
-      this.addBox(x0, x0 + ff, yB, yT, fz0, fz1, fm);
-      this.addBox(x1 - ff, x1, yB, yT, fz0, fz1, fm);
-      this.addBox(x0 + ff, x1 - ff, yT - ff, yT, fz0, fz1, fm);
-      if (!desk) this.addBox(x0 + ff, x1 - ff, yB, yB + ff, fz0, fz1, fm);
-      const iz0 = fz0 - 0.5;
-      const iz1 = fz0 + 0.1;
+    if (isInset(c)) {
+      // Recess width: the face-frame stile (framed) or the box edge (frameless).
+      const ff = framed ? S.frameWidth || 1.5 : matT;
+      if (framed) {
+        // visible hardwood frame perimeter
+        this.addBox(x0, x0 + ff, yB, yT, fz0, fz1, fm);
+        this.addBox(x1 - ff, x1, yB, yT, fz0, fz1, fm);
+        this.addBox(x0 + ff, x1 - ff, yT - ff, yT, fz0, fz1, fm);
+        if (!desk) this.addBox(x0 + ff, x1 - ff, yB, yB + ff, fz0, fz1, fm);
+      }
+      // Inset fronts sit flush with the frame / box face (in the same plane),
+      // recessed a hair so the reveal reads.
+      const iz0 = fz0;
+      const iz1 = fz1 - 0.06;
       const ol = x0 + ff + gap;
       const or = x1 - ff - gap;
       if (c.frontStyle === "doors") {
@@ -287,7 +293,7 @@ export class CabinetScene {
       return;
     }
 
-    // frameless full-overlay
+    // full overlay — fronts proud over the box/frame (frame hidden if framed)
     const ol = x0 + gap;
     const or = x1 - gap;
     const ot = yT - gap;

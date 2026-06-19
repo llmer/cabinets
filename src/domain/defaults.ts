@@ -115,6 +115,7 @@ export function defaultCabinet(type: CabinetType): Omit<Cabinet, "id" | "name"> 
       shelves: 2,
       toeKick: false,
       construction: "frameless",
+      overlay: "full",
     };
   }
   if (type === "tall") {
@@ -129,6 +130,7 @@ export function defaultCabinet(type: CabinetType): Omit<Cabinet, "id" | "name"> 
       shelves: 4,
       toeKick: true,
       construction: "frameless",
+      overlay: "full",
     };
   }
   return {
@@ -142,6 +144,7 @@ export function defaultCabinet(type: CabinetType): Omit<Cabinet, "id" | "name"> 
     shelves: 1,
     toeKick: true,
     construction: "frameless",
+    overlay: "full",
   };
 }
 

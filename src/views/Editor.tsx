@@ -7,6 +7,7 @@ import {
   faceHeight,
   interiorWidth,
   isFramed,
+  isInset,
 } from "@/engine/geometry";
 import { drawerStackBudget, getDrawerHeights } from "@/engine/drawers";
 import { fmtLen, parseLen, toDisplayNumber, unitLabel } from "@/engine/units";
@@ -47,6 +48,8 @@ export function Editor() {
   const cabinets = useStore((st) => st.project.cabinets);
   const updateCab = useStore((st) => st.updateCab);
   const setCabinetType = useStore((st) => st.setCabinetType);
+  const setConstruction = useStore((st) => st.setConstruction);
+  const setOverlay = useStore((st) => st.setOverlay);
   const setFrontStyle = useStore((st) => st.setFrontStyle);
   const setDrawerCount = useStore((st) => st.setDrawerCount);
   const resetDrawerHeights = useStore((st) => st.resetDrawerHeights);
@@ -66,6 +69,7 @@ export function Editor() {
   const idx = cabinets.findIndex((c) => c.id === sel.id);
   const accent = colorFor(idx);
   const framed = isFramed(sel);
+  const inset = isInset(sel);
   const isDesk = sel.frontStyle === "desk";
   const isOpening = sel.frontStyle === "opening";
   const tkOn = sel.toeKick !== false;
@@ -171,13 +175,27 @@ export function Editor() {
 
       <FieldLabel>Construction</FieldLabel>
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-        <Toggle active={!framed} style={{ flex: 1 }} onClick={() => updateCab(sel.id, { construction: "frameless" })}>
+        <Toggle active={!framed} style={{ flex: 1 }} onClick={() => setConstruction(sel.id, "frameless")}>
           Frameless
         </Toggle>
-        <Toggle active={framed} style={{ flex: 1 }} onClick={() => updateCab(sel.id, { construction: "framed" })}>
+        <Toggle active={framed} style={{ flex: 1 }} onClick={() => setConstruction(sel.id, "framed")}>
           Face frame
         </Toggle>
       </div>
+
+      {!isOpening && (
+        <>
+          <FieldLabel>Front fit</FieldLabel>
+          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+            <Toggle active={!inset} style={{ flex: 1 }} onClick={() => setOverlay(sel.id, "full")}>
+              Full overlay
+            </Toggle>
+            <Toggle active={inset} style={{ flex: 1 }} onClick={() => setOverlay(sel.id, "inset")}>
+              Inset
+            </Toggle>
+          </div>
+        </>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
         {dimCell(`Width (${unitLabel(u)})`, "width", 6, 48)}

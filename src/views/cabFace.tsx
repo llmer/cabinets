@@ -1,6 +1,12 @@
 import { CSSProperties, ReactNode } from "react";
 import { Cabinet, Settings } from "@/domain/types";
-import { boxHeight, faceHeight } from "@/engine/geometry";
+import {
+  boxHeight,
+  effectiveFrameWidth,
+  faceHeight,
+  isFramed,
+  isInset,
+} from "@/engine/geometry";
 import { drawerStackBudget, getDrawerHeights } from "@/engine/drawers";
 
 /**
@@ -19,7 +25,13 @@ export function renderFace(
   s: Settings,
 ): ReactNode {
   if (c.frontStyle === "opening") return openingFace(c, ppi, tkPx, s);
-  if ((c.construction || "frameless") === "framed") return framedFace(c, accent, ppi, tkPx, s);
+  if (isInset(c)) {
+    // A wide hardwood frame when framed; a thin box edge when frameless-inset.
+    const effFF = effectiveFrameWidth(c, s);
+    const frameColor = isFramed(c) ? FRAME_BG : "#D8CCB2";
+    return insetFace(c, accent, ppi, tkPx, s, effFF, frameColor);
+  }
+  // Full overlay — fronts sit proud, covering the box/frame (frame hidden).
   return framelessFace(c, accent, ppi, tkPx, s);
 }
 
@@ -149,15 +161,18 @@ function framelessFace(
 /* Face frame (inset)                                                  */
 /* ------------------------------------------------------------------ */
 
-function framedFace(
+function insetFace(
   c: Cabinet,
   accent: string,
   ppi: number,
   tkPx: number,
   s: Settings,
+  effFF: number,
+  frameColor: string,
 ): ReactNode {
-  const ffpx = Math.max(2.5, (s.frameWidth || 1.5) * ppi);
+  const ffpx = Math.max(2.5, effFF * ppi);
   const rev = Math.max(0.8, 0.125 * ppi);
+  const FRAME_BG = frameColor;
   const insetPanel = (key: string) => (
     <div
       key={key}
@@ -206,7 +221,7 @@ function framedFace(
   } else if (fs === "door_drawer") {
     const dh = getDrawerHeights(c, s)[0];
     const boxH = boxHeight(c, s);
-    const doorsGrow = Math.max(1, boxH - 3 * (s.frameWidth || 1.5) - dh);
+    const doorsGrow = Math.max(1, boxH - 3 * effFF - dh);
     mods = [drawerMod("m0", dh), doorsMod("m1", doorsGrow, c.doorCount)];
   } else if (fs === "desk") {
     const hs = getDrawerHeights(c, s);

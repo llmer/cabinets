@@ -10,6 +10,7 @@ import {
   Construction,
   FrontStyle,
   HardwarePricing,
+  Overlay,
   Project,
   Role,
   Settings,
@@ -68,10 +69,13 @@ interface AppState {
   reorderBand: (band: "base" | "wall", orderedIds: string[], history?: boolean) => void;
   setCabinetType: (id: string, type: CabinetType) => void;
   setFrontStyle: (id: string, style: FrontStyle) => void;
+  setOverlay: (id: string, overlay: Overlay) => void;
+  setConstruction: (id: string, c: Construction) => void;
   setDrawerCount: (id: string, n: number) => void;
   resetDrawerHeights: (id: string) => void;
   setDrawerHeightAt: (id: string, i: number, value: number) => void;
   setConstructionAll: (mode: Construction) => void;
+  setOverlayAll: (mode: Overlay) => void;
 
   /* settings mutations */
   updateSettings: (patch: Partial<Settings>) => void;
@@ -258,6 +262,21 @@ export const useStore = create<AppState>((set, get) => {
       patchCab(id, patch);
     },
 
+    setOverlay: (id, overlay) => {
+      const sel = get().project.cabinets.find((c) => c.id === id);
+      if (!sel) return;
+      // Budget changes with overlay; reset drawer heights to a fresh even split.
+      const tmp = { ...sel, overlay };
+      patchCab(id, { overlay, drawerHeights: defaultHeights(tmp, get().project.settings) });
+    },
+
+    setConstruction: (id, c) => {
+      const sel = get().project.cabinets.find((x) => x.id === id);
+      if (!sel) return;
+      const tmp = { ...sel, construction: c };
+      patchCab(id, { construction: c, drawerHeights: defaultHeights(tmp, get().project.settings) });
+    },
+
     setDrawerCount: (id, n) => {
       const sel = get().project.cabinets.find((c) => c.id === id);
       if (!sel) return;
@@ -282,7 +301,20 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     setConstructionAll: (mode) =>
-      withCabinets((cabs) => cabs.map((c) => ({ ...c, construction: mode }))),
+      withCabinets((cabs) =>
+        cabs.map((c) => {
+          const next = { ...c, construction: mode };
+          return { ...next, drawerHeights: defaultHeights(next, get().project.settings) };
+        }),
+      ),
+
+    setOverlayAll: (mode) =>
+      withCabinets((cabs) =>
+        cabs.map((c) => {
+          const next = { ...c, overlay: mode };
+          return { ...next, drawerHeights: defaultHeights(next, get().project.settings) };
+        }),
+      ),
 
     updateSettings: (patch) =>
       apply({ ...get().project, settings: { ...get().project.settings, ...patch } }),

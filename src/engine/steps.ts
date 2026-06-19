@@ -116,9 +116,9 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
       ...parts.filter((p) => p.name === "Door").map((p) => p.width),
     );
     const hingesPer = hingesForDoorHeight(maxDoorH);
-    if (g.framed)
+    if (g.inset)
       push(
-        `Hang ${doors} inset door${doors > 1 ? "s" : ""} inside the frame openings with overlay or inset hinges, setting an even 1/8" reveal on every side.`,
+        `Bore 35 mm hinge cups (${hingesPer} per door) and hang ${doors} inset door${doors > 1 ? "s" : ""} ${g.framed ? "inside the frame openings" : "flush in the box openings"} with inset/clip hinges, setting an even 1/8" reveal on every side.`,
       );
     else
       push(
