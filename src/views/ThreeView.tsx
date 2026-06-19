@@ -84,10 +84,11 @@ export function ThreeView() {
           <Toggle active={ci.allFrameless} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setConstructionAll("frameless")}>Frameless</Toggle>
           <Toggle active={ci.allFramed} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setConstructionAll("framed")}>Face frame</Toggle>
         </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontFamily: font.mono, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: color.faint }}>Front fit</span>
           <Toggle active={ci.allFull} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setOverlayAll("full")}>Full overlay</Toggle>
-          <Toggle active={ci.allInset} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setOverlayAll("inset")}>Inset</Toggle>
+          <Toggle active={ci.allRailInset} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setOverlayAll("inset_rail")}>Railed inset</Toggle>
+          <Toggle active={ci.allFlushInset} style={{ padding: "6px 12px", fontSize: 12 }} onClick={() => setOverlayAll("inset")}>Flush inset</Toggle>
         </div>
       </div>
 

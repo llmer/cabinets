@@ -3,6 +3,7 @@ import {
   backThickness,
   boxHeight,
   cabinetGeometry,
+  carcassDepth,
   carcassThickness,
   effectiveFrameWidth,
   faceHeight,
@@ -10,6 +11,7 @@ import {
   isFramed,
   isInset,
   isOpenBox,
+  isRailInset,
 } from "./geometry";
 import { getDrawerHeights } from "./drawers";
 import { r3 } from "./units";
@@ -102,6 +104,21 @@ export function genParts(c: Cabinet, s: Settings): CabinetParts {
       if (mid > 0) add("Face-frame mid rail", mid, railLen, ff, "faceFrame", "none");
     }
 
+    // Frameless railed inset — a 3/4" rail between every stacked face (no stiles;
+    // the box sides serve as the vertical reference). Framed boxes already have
+    // their mid rails from the face frame above.
+    if (isRailInset(c) && !framed) {
+      const railW = s.frameWidth || 1.5;
+      const railLen = r3(W - 2 * t);
+      const mid =
+        c.frontStyle === "drawers" || c.frontStyle === "desk"
+          ? c.drawerCount - 1
+          : c.frontStyle === "door_drawer"
+            ? 1
+            : 0;
+      if (mid > 0) add("Inset rail", mid, railLen, railW, "carcass", railLen);
+    }
+
     if (inset) {
       // INSET fronts — recessed inside the openings with a reveal all round.
       const insR = rev;
@@ -148,7 +165,11 @@ export function genParts(c: Cabinet, s: Settings): CabinetParts {
 
   /* ---------- drawer boxes (addition) ---------- */
   if (s.includeDrawerBoxes && hasDrawers(c)) {
-    addDrawerBoxes(parts, add, c, s, interiorW, cDepth);
+    for (const sp of drawerBoxSpecs(c, s)) {
+      add("Drawer box side", 2, sp.boxDepth, sp.boxHeight, "drawerBox", "none");
+      add("Drawer box front/back", 2, r3(sp.boxWidth - 2 * sp.sideThickness), sp.boxHeight, "drawerBox", "none");
+      add("Drawer bottom", 1, sp.bottomWidth, sp.bottomLength, "drawerBottom", "none");
+    }
   }
 
   return {
@@ -166,39 +187,52 @@ function hasDrawers(c: Cabinet): boolean {
   );
 }
 
+/** Per-drawer box dimensions, used by both the cut list and the build plans. */
+export interface DrawerBoxSpec {
+  /** 1-based position from the top. */
+  index: number;
+  /** The drawer FRONT height (inches). */
+  frontHeight: number;
+  /** Outside dimensions of the drawer box. */
+  boxWidth: number;
+  boxDepth: number;
+  boxHeight: number;
+  sideThickness: number;
+  /** Bottom panel, captured in a 1/4" groove all round. */
+  bottomWidth: number;
+  bottomLength: number;
+  bottomThickness: number;
+}
+
 /**
- * Append drawer-box parts for every drawer front.
+ * Drawer-box geometry for every drawer front.
  *
- * Assumptions (documented in the cut-list notes): side-mount slides take 1/2"
- * per side (box is 1" narrower than the opening); the bottom is captured in a
- * 1/4" groove on all four sides; box sides run ~1" shallower than the front.
+ * Assumptions: side-mount slides take 1/2" per side (box is 1" narrower than the
+ * opening); the box sides run ~1" shallower than the front; the bottom is
+ * captured in a 1/4" groove on all four sides.
  */
-function addDrawerBoxes(
-  parts: Part[],
-  add: (n: string, q: number, l: number, w: number, role: Role, e?: Edge) => void,
-  c: Cabinet,
-  s: Settings,
-  interiorW: number,
-  cDepth: number,
-): void {
-  void parts;
+export function drawerBoxSpecs(c: Cabinet, s: Settings): DrawerBoxSpec[] {
+  if (!hasDrawers(c)) return [];
   const dt = s.stocks[s.roleStock.drawerBox].thickness;
+  const bt = s.stocks[s.roleStock.drawerBottom].thickness;
+  const interiorW = r3(c.width - 2 * carcassThickness(s));
+  const cDepth = carcassDepth(c, s);
   const boxW = r3(interiorW - 1);
   const boxDepth = Math.max(6, Math.floor(cDepth - 1));
-  const heights = getDrawerHeights(c, s);
-  for (const dh of heights) {
+  return getDrawerHeights(c, s).map((dh, i) => {
     const sideH = r3(Math.max(2.5, dh - 1));
-    add("Drawer box side", 2, boxDepth, sideH, "drawerBox", "none");
-    add("Drawer box front/back", 2, r3(boxW - 2 * dt), sideH, "drawerBox", "none");
-    add(
-      "Drawer bottom",
-      1,
-      r3(boxW - 2 * dt + 0.5),
-      r3(boxDepth - 2 * dt + 0.5),
-      "drawerBottom",
-      "none",
-    );
-  }
+    return {
+      index: i + 1,
+      frontHeight: dh,
+      boxWidth: boxW,
+      boxDepth,
+      boxHeight: sideH,
+      sideThickness: dt,
+      bottomWidth: r3(boxW - 2 * dt + 0.5),
+      bottomLength: r3(boxDepth - 2 * dt + 0.5),
+      bottomThickness: bt,
+    };
+  });
 }
 
 /** Merge parts that are identical in every shop-relevant dimension. */

@@ -7,7 +7,6 @@ import {
   faceHeight,
   interiorWidth,
   isFramed,
-  isInset,
 } from "@/engine/geometry";
 import { drawerStackBudget, getDrawerHeights } from "@/engine/drawers";
 import { fmtLen, parseLen, toDisplayNumber, unitLabel } from "@/engine/units";
@@ -69,7 +68,9 @@ export function Editor() {
   const idx = cabinets.findIndex((c) => c.id === sel.id);
   const accent = colorFor(idx);
   const framed = isFramed(sel);
-  const inset = isInset(sel);
+  const overlayFull = sel.overlay === "full";
+  const railed = sel.overlay === "inset_rail";
+  const flush = sel.overlay === "inset";
   const isDesk = sel.frontStyle === "desk";
   const isOpening = sel.frontStyle === "opening";
   const tkOn = sel.toeKick !== false;
@@ -186,13 +187,23 @@ export function Editor() {
       {!isOpening && (
         <>
           <FieldLabel>Front fit</FieldLabel>
-          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-            <Toggle active={!inset} style={{ flex: 1 }} onClick={() => setOverlay(sel.id, "full")}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+            <Toggle active={overlayFull} style={{ flex: "1 1 30%", padding: "8px 6px", fontSize: 12 }} onClick={() => setOverlay(sel.id, "full")}>
               Full overlay
             </Toggle>
-            <Toggle active={inset} style={{ flex: 1 }} onClick={() => setOverlay(sel.id, "inset")}>
-              Inset
+            <Toggle active={railed} style={{ flex: "1 1 30%", padding: "8px 6px", fontSize: 12 }} onClick={() => setOverlay(sel.id, "inset_rail")}>
+              Railed inset
             </Toggle>
+            <Toggle active={flush} style={{ flex: "1 1 30%", padding: "8px 6px", fontSize: 12 }} onClick={() => setOverlay(sel.id, "inset")}>
+              Flush inset
+            </Toggle>
+          </div>
+          <div style={{ fontFamily: font.mono, fontSize: 10, color: color.faint, marginBottom: 16 }}>
+            {overlayFull
+              ? "fronts sit proud over the box"
+              : railed
+                ? "flush in the openings · rail between every face"
+                : "flush in the openings · gaps only, no rails"}
           </div>
         </>
       )}

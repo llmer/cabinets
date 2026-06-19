@@ -14,8 +14,9 @@ export function LayoutView() {
 
   const allFramed = cabinets.length > 0 && cabinets.every((c) => (c.construction || "frameless") === "framed");
   const allFrameless = cabinets.every((c) => (c.construction || "frameless") !== "framed");
-  const allInset = cabinets.length > 0 && cabinets.every((c) => c.overlay === "inset");
-  const allFull = cabinets.every((c) => c.overlay !== "inset");
+  const allFull = cabinets.every((c) => c.overlay === "full");
+  const allRailed = cabinets.length > 0 && cabinets.every((c) => c.overlay === "inset_rail");
+  const allFlush = cabinets.length > 0 && cabinets.every((c) => c.overlay === "inset");
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 332px", gap: 0, minHeight: "100%" }}>
@@ -47,15 +48,18 @@ export function LayoutView() {
           <span style={{ fontFamily: font.mono, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.16em", color: color.inkMuted }}>
             Front fit (all)
           </span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <Toggle active={allFull} style={{ padding: "7px 14px" }} onClick={() => setOverlayAll("full")}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Toggle active={allFull} style={{ padding: "7px 12px" }} onClick={() => setOverlayAll("full")}>
               Full overlay
             </Toggle>
-            <Toggle active={allInset} style={{ padding: "7px 14px" }} onClick={() => setOverlayAll("inset")}>
-              Inset
+            <Toggle active={allRailed} style={{ padding: "7px 12px" }} onClick={() => setOverlayAll("inset_rail")}>
+              Railed inset
+            </Toggle>
+            <Toggle active={allFlush} style={{ padding: "7px 12px" }} onClick={() => setOverlayAll("inset")}>
+              Flush inset
             </Toggle>
           </div>
-          <span style={{ fontFamily: font.mono, fontSize: 11, color: color.faint }}>overlay sits proud · inset sits flush</span>
+          <span style={{ fontFamily: font.mono, fontSize: 11, color: color.faint }}>overlay proud · railed = rails between faces · flush = gaps only</span>
         </div>
 
         <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>

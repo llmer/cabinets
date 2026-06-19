@@ -1,5 +1,6 @@
 import { CabinetParts, Settings } from "@/domain/types";
 import { bandingInchesPerPiece } from "./parts";
+import { isRailInset } from "./geometry";
 import { hingesForDoorHeight } from "./hardware";
 import { typeLabel } from "./labels";
 import { fmtLen } from "./units";
@@ -57,7 +58,9 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
     `Cut all ${pieces} panels for ${c.name} from the cut list. Label each piece as it comes off the saw — it saves you twice.`,
   );
   push(
-    "Drill the 32 mm system holes: two vertical rows on the inside of each side panel, 37 mm in from the front and back edges, 32 mm on centre. These carry your shelf pins, hinge plates and slide screws.",
+    isRailInset(c)
+      ? "Drill the 32 mm system holes: two vertical rows on the inside of each side panel, ~56 mm in from the front (37 mm + face thickness, so railed-inset faces land flush) and 37 mm from the back, 32 mm on centre. These carry your shelf pins, hinge plates and slide screws."
+      : "Drill the 32 mm system holes: two vertical rows on the inside of each side panel, 37 mm in from the front and back edges, 32 mm on centre. These carry your shelf pins, hinge plates and slide screws.",
   );
   if (bandFt > 0)
     push(
@@ -133,7 +136,7 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
     const bw = fmtLen(g.interiorWidth - 1, u);
     const bd = fmtLen(Math.floor(g.carcassDepth - 1), u);
     push(
-      `Mount drawer slides dead level at each opening. Build drawer boxes around ${bw} wide × ${bd} deep and fit them, then attach the ${drw} drawer front${drw > 1 ? "s" : ""} to a 1/8" reveal.`,
+      `Mount drawer slides dead level at each opening. Build ${drw} drawer box${drw > 1 ? "es" : ""} (${bw} wide × ${bd} deep, 1/2\" ply sides with a 1/4\" captured bottom — see the per-drawer sizes below), fit them, then attach the fronts to a 1/8" reveal.`,
     );
   }
 

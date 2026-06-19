@@ -23,6 +23,9 @@ export interface ConstructionInfo {
   allFramed: boolean;
   allFrameless: boolean;
   allFull: boolean;
+  allRailInset: boolean;
+  allFlushInset: boolean;
+  /** Every cabinet is some kind of inset (railed or flush). */
   allInset: boolean;
   label: string;
   note: string;
@@ -36,8 +39,12 @@ const BOX_MIXED =
   "Mixed construction — each cabinet carries its own frameless / face-frame setting (see its tag); hardwood face-frame stock is listed separately, not nested in the sheets.";
 
 const FIT_FULL = ' Fronts are full-overlay, covering the box/frame to a 1/8" reveal.';
-const FIT_INSET = ' Fronts are inset, sized to the openings with a 1/8" reveal.';
-const FIT_MIXED = " Front fit (full-overlay vs inset) is set per cabinet.";
+const FIT_RAIL =
+  ' Fronts are railed inset — flush in the openings with a rail between every stacked face (32 mm rows shift back ~56 mm). Inset rails are listed separately.';
+const FIT_FLUSH =
+  ' Fronts are full inset — flush in the openings, separated by gaps only (no rails).';
+const FIT_INSET = " Fronts are inset, sized to the openings with a 1/8\" reveal.";
+const FIT_MIXED = " Front fit (overlay / railed-inset / flush-inset) is set per cabinet.";
 const VERIFY = " Verify against your own method before cutting.";
 
 /** Summarize the run's construction + front fit (all-framed / all-inset / mixed). */
@@ -45,14 +52,41 @@ export function constructionInfo(cabinets: Cabinet[]): ConstructionInfo {
   const allFramed =
     cabinets.length > 0 && cabinets.every((c) => (c.construction || "frameless") === "framed");
   const allFrameless = cabinets.every((c) => (c.construction || "frameless") !== "framed");
-  const allFull = cabinets.every((c) => c.overlay !== "inset");
-  const allInset = cabinets.length > 0 && cabinets.every((c) => c.overlay === "inset");
+  const allFull = cabinets.every((c) => c.overlay === "full");
+  const allRailInset = cabinets.length > 0 && cabinets.every((c) => c.overlay === "inset_rail");
+  const allFlushInset = cabinets.length > 0 && cabinets.every((c) => c.overlay === "inset");
+  const allInset = cabinets.length > 0 && cabinets.every((c) => c.overlay !== "full");
 
   const constr = allFramed ? "face frame" : allFrameless ? "frameless" : "mixed";
-  const fit = allFull ? "full overlay" : allInset ? "inset" : "mixed fit";
+  const fit = allFull
+    ? "full overlay"
+    : allRailInset
+      ? "inset · railed"
+      : allFlushInset
+        ? "inset · flush"
+        : allInset
+          ? "inset"
+          : "mixed fit";
   const label = `${constr} · ${fit}`;
 
   const box = allFrameless ? BOX_FRAMELESS : allFramed ? BOX_FRAMED : BOX_MIXED;
-  const fitNote = allFull ? FIT_FULL : allInset ? FIT_INSET : FIT_MIXED;
-  return { allFramed, allFrameless, allFull, allInset, label, note: box + fitNote + VERIFY };
+  const fitNote = allFull
+    ? FIT_FULL
+    : allRailInset
+      ? FIT_RAIL
+      : allFlushInset
+        ? FIT_FLUSH
+        : allInset
+          ? FIT_INSET
+          : FIT_MIXED;
+  return {
+    allFramed,
+    allFrameless,
+    allFull,
+    allRailInset,
+    allFlushInset,
+    allInset,
+    label,
+    note: box + fitNote + VERIFY,
+  };
 }

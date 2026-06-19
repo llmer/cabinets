@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, makeCabinet } from "@/domain/defaults";
 import { Part, Settings } from "@/domain/types";
-import { genParts } from "./parts";
+import { drawerBoxSpecs, genParts } from "./parts";
+import { drawerStackBudget } from "./drawers";
 
 const S: Settings = DEFAULT_SETTINGS;
 const noBoxes: Settings = { ...DEFAULT_SETTINGS, includeDrawerBoxes: false };
@@ -155,6 +156,68 @@ describe("genParts — overlay vs inset are independent of construction", () => 
     expect(door.length).toBe(11.063);
     // door height = (boxH - 2*0.75) - 2*0.125 = 28.5 - 0.25 = 28.25
     expect(door.width).toBe(28.25);
+  });
+});
+
+describe("railed inset (frameless)", () => {
+  const c = makeCabinet("base", "B", {
+    width: 18,
+    height: 34.5,
+    depth: 24,
+    frontStyle: "drawers",
+    drawerCount: 3,
+    construction: "frameless",
+    overlay: "inset_rail",
+  });
+
+  it("budgets for a rail between every face", () => {
+    // boxH 30 - 2*0.75 (box edges) - (3-1)*1.5 (rails) = 25.5
+    expect(drawerStackBudget(c, S)).toBe(25.5);
+  });
+
+  it("adds inset rails and sizes the inset fronts", () => {
+    const { parts } = genParts(c, noBoxes);
+    const rail = find(parts, "Inset rail")!;
+    expect(rail).toBeTruthy();
+    expect(rail.qty).toBe(2); // n-1 rails
+    expect(rail.length).toBe(16.5); // W - 2*0.75 (between box sides)
+    expect(rail.width).toBe(1.5); // rail width
+    expect(rail.role).toBe("carcass"); // ply rail (frameless), not hardwood
+    const front = find(parts, "Drawer front")!;
+    expect(front.qty).toBe(3);
+    expect(front.length).toBe(16.25); // openW 16.5 - 2*0.125 reveal
+    expect(front.width).toBe(8.25); // dh 8.5 - 2*0.125
+  });
+
+  it("flush inset (no rails) leaves more room and lists no inset rails", () => {
+    const flush: typeof c = { ...c, overlay: "inset" };
+    expect(drawerStackBudget(flush, S)).toBe(28.25); // 30 - 1.5 - 2*0.125
+    const { parts } = genParts(flush, noBoxes);
+    expect(find(parts, "Inset rail")).toBeUndefined();
+  });
+});
+
+describe("drawerBoxSpecs", () => {
+  it("derives box dimensions per drawer", () => {
+    const c = makeCabinet("base", "B", {
+      width: 18,
+      height: 34.5,
+      depth: 24,
+      frontStyle: "drawers",
+      drawerCount: 3,
+    });
+    const specs = drawerBoxSpecs(c, S);
+    expect(specs).toHaveLength(3);
+    const sp = specs[0];
+    expect(sp.boxWidth).toBe(15.5); // interior 16.5 - 1 (slides)
+    expect(sp.boxDepth).toBe(22); // floor(carcassDepth 23.25 - 1)
+    expect(sp.bottomWidth).toBe(15); // 15.5 - 2*0.5 + 0.5
+    expect(sp.bottomLength).toBe(21.5); // 22 - 2*0.5 + 0.5
+  });
+
+  it("is empty for a door cabinet", () => {
+    const c = makeCabinet("base", "B", { frontStyle: "doors" });
+    expect(drawerBoxSpecs(c, S)).toHaveLength(0);
   });
 });
 

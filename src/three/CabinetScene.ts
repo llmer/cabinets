@@ -1,7 +1,16 @@
 import * as THREE from "three";
 import { Cabinet, Settings } from "@/domain/types";
 import { colorFor, three as T } from "@/theme";
-import { boxHeight, backThickness, carcassThickness, isFramed, isInset } from "@/engine/geometry";
+import {
+  backThickness,
+  boxHeight,
+  carcassThickness,
+  effectiveFrameWidth,
+  insetStackGap,
+  isFramed,
+  isInset,
+  isRailInset,
+} from "@/engine/geometry";
 import { getDrawerHeights } from "@/engine/drawers";
 
 type ViewPreset = "iso" | "front" | "top";
@@ -248,21 +257,28 @@ export class CabinetScene {
     };
 
     if (isInset(c)) {
-      // Recess width: the face-frame stile (framed) or the box edge (frameless).
-      const ff = framed ? S.frameWidth || 1.5 : matT;
+      // Border around the opening: face-frame stile (framed) or box edge.
+      const ff = effectiveFrameWidth(c, S);
+      const railGap = insetStackGap(c, S); // mid rail (framed/railed) or reveal
+      const hasRails = framed || isRailInset(c);
+      const railMat = framed ? fm : this.matCarcass;
+      const rl = x0 + ff;
+      const rr = x1 - ff;
       if (framed) {
         // visible hardwood frame perimeter
         this.addBox(x0, x0 + ff, yB, yT, fz0, fz1, fm);
         this.addBox(x1 - ff, x1, yB, yT, fz0, fz1, fm);
-        this.addBox(x0 + ff, x1 - ff, yT - ff, yT, fz0, fz1, fm);
-        if (!desk) this.addBox(x0 + ff, x1 - ff, yB, yB + ff, fz0, fz1, fm);
+        this.addBox(rl, rr, yT - ff, yT, fz0, fz1, fm);
+        if (!desk) this.addBox(rl, rr, yB, yB + ff, fz0, fz1, fm);
       }
-      // Inset fronts sit flush with the frame / box face (in the same plane),
-      // recessed a hair so the reveal reads.
+      // Inset fronts sit flush with the frame / box face, a hair proud-recessed.
       const iz0 = fz0;
       const iz1 = fz1 - 0.06;
       const ol = x0 + ff + gap;
       const or = x1 - ff - gap;
+      const drawRail = (yA: number, yB2: number) => {
+        if (hasRails) this.addBox(rl, rr, yA, yB2, iz0, iz1, railMat);
+      };
       if (c.frontStyle === "doors") {
         const nd = c.doorCount;
         for (let i = 0; i < nd; i++) {
@@ -272,21 +288,27 @@ export class CabinetScene {
           hbar(a, b, yB + ff, yT - ff, true);
         }
       } else {
-        let top = yT - ff - gap;
         const hs = getDrawerHeights(c, S);
-        hs.forEach((dh) => {
-          this.addBox(ol, or, top - dh + gap / 2, top, iz0, iz1, fm);
-          hbar(ol, or, top - dh, top, false);
-          top -= dh;
+        let y = yT - ff;
+        hs.forEach((dh, i) => {
+          this.addBox(ol, or, y - dh, y, iz0, iz1, fm);
+          hbar(ol, or, y - dh, y, false);
+          y -= dh;
+          if (i < hs.length - 1) {
+            drawRail(y - railGap, y);
+            y -= railGap;
+          }
         });
         if (c.frontStyle === "door_drawer") {
+          drawRail(y - railGap, y);
+          y -= railGap;
           const nd = c.doorCount;
-          const bot = yB + ff + gap;
+          const bot = yB + ff;
           for (let i = 0; i < nd; i++) {
             const a = ol + ((or - ol) * i) / nd + gap / 2;
             const b = ol + ((or - ol) * (i + 1)) / nd - gap / 2;
-            this.addBox(a, b, bot, top - gap, iz0, iz1, fm);
-            hbar(a, b, bot, top, true);
+            this.addBox(a, b, bot + gap, y, iz0, iz1, fm);
+            hbar(a, b, bot, y, true);
           }
         }
       }

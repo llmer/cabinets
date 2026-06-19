@@ -4,6 +4,7 @@ import {
   boxHeight,
   effectiveFrameWidth,
   faceHeight,
+  insetStackGap,
   isFramed,
   isInset,
 } from "@/engine/geometry";
@@ -26,10 +27,12 @@ export function renderFace(
 ): ReactNode {
   if (c.frontStyle === "opening") return openingFace(c, ppi, tkPx, s);
   if (isInset(c)) {
-    // A wide hardwood frame when framed; a thin box edge when frameless-inset.
+    // Side/top/bottom border: wide hardwood frame (framed) or thin box edge.
+    // Between-face rail: a mid rail (framed / railed inset) or a thin reveal.
     const effFF = effectiveFrameWidth(c, s);
+    const railFF = insetStackGap(c, s);
     const frameColor = isFramed(c) ? FRAME_BG : "#D8CCB2";
-    return insetFace(c, accent, ppi, tkPx, s, effFF, frameColor);
+    return insetFace(c, accent, ppi, tkPx, s, effFF, railFF, frameColor);
   }
   // Full overlay — fronts sit proud, covering the box/frame (frame hidden).
   return framelessFace(c, accent, ppi, tkPx, s);
@@ -168,9 +171,11 @@ function insetFace(
   tkPx: number,
   s: Settings,
   effFF: number,
+  railFF: number,
   frameColor: string,
 ): ReactNode {
-  const ffpx = Math.max(2.5, effFF * ppi);
+  const ffpx = Math.max(2.5, effFF * ppi); // side stiles + top/bottom border
+  const railpx = Math.max(1, railFF * ppi); // rail/gap between stacked faces
   const rev = Math.max(0.8, 0.125 * ppi);
   const FRAME_BG = frameColor;
   const insetPanel = (key: string) => (
@@ -190,8 +195,11 @@ function insetFace(
       <div style={{ position: "absolute", top: "44%", left: "50%", width: 2, height: "12%", background: "rgba(31,20,14,.5)", transform: "translateX(-50%)", borderRadius: 1 }} />
     </div>
   );
-  const rail = (key: string) => (
+  const railEnd = (key: string) => (
     <div key={key} style={{ flex: "0 0 " + ffpx + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
+  );
+  const railMid = (key: string) => (
+    <div key={key} style={{ flex: "0 0 " + railpx + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
   );
   const drawerMod = (key: string, grow: number) => (
     <div key={key} style={{ flex: grow + " 1 0", position: "relative", minHeight: 0 }}>{insetPanel("p")}</div>
@@ -229,12 +237,12 @@ function insetFace(
     mods = hs.map((dh, i) => drawerMod("m" + i, dh));
     mods.push(openMod("open", Math.max(1, boxHeight(c, s) - sum)));
   }
-  const col: ReactNode[] = [rail("top")];
+  const col: ReactNode[] = [railEnd("top")];
   mods.forEach((m, i) => {
-    if (i > 0) col.push(rail("r" + i));
+    if (i > 0) col.push(railMid("r" + i));
     col.push(m);
   });
-  if (fs !== "desk") col.push(rail("bot"));
+  if (fs !== "desk") col.push(railEnd("bot"));
   const stile = (side: "left" | "right") => (
     <div
       key={side}

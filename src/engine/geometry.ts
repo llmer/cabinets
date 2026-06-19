@@ -16,20 +16,32 @@ export function isFramed(c: Cabinet): boolean {
 }
 
 export function isInset(c: Cabinet): boolean {
-  return c.overlay === "inset";
+  return c.overlay === "inset" || c.overlay === "inset_rail";
+}
+
+/** Railed inset — a rail between every drawer/door face (frameless). */
+export function isRailInset(c: Cabinet): boolean {
+  return c.overlay === "inset_rail";
 }
 
 /**
- * Width of the border the inset front is recessed behind: the face-frame stile
- * when framed, otherwise the carcass edge (frameless inset). Unused for overlay.
+ * Width of the border around an inset opening (sides + top/bottom): the
+ * face-frame stile when framed, otherwise the carcass edge (frameless inset).
+ * Unused for overlay.
  */
 export function effectiveFrameWidth(c: Cabinet, s: Settings): number {
   return isFramed(c) ? s.frameWidth || 1.5 : carcassThickness(s);
 }
 
-/** Vertical spacing between stacked inset fronts: a mid rail (framed) or a reveal. */
+/**
+ * Vertical spacing between stacked inset fronts:
+ * - framed       → a face-frame mid rail (frameWidth)
+ * - railed inset → an inset rail (frameWidth)
+ * - full inset   → just a reveal gap
+ */
 export function insetStackGap(c: Cabinet, s: Settings): number {
-  return isFramed(c) ? s.frameWidth || 1.5 : s.reveal;
+  if (isFramed(c) || isRailInset(c)) return s.frameWidth || 1.5;
+  return s.reveal;
 }
 
 /** Desk and opening fronts produce a box with no bottom and no back. */

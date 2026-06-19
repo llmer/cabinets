@@ -95,7 +95,7 @@ export function SettingsView() {
           {dimField("toeKickDepth", "Toe-kick recess", 0, 6)}
           {dimField("upperBottom", "Floor → upper", 30, 80)}
           {dimField("counterH", "Counter height", 24, 48)}
-          {dimField("frameWidth", "Face-frame width", 0.75, 3)}
+          {dimField("frameWidth", "Frame / rail width", 0.75, 3)}
         </div>
       </Card>
 

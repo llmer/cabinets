@@ -25,10 +25,11 @@ export type Construction = "frameless" | "framed";
 /**
  * How the door/drawer front sits relative to the box/frame, independent of
  * construction:
- * - full  : full-overlay — the front sits proud, covering the face to a reveal
- * - inset : the front sits flush, recessed inside the opening
+ * - full       : full-overlay — front sits proud, covering the face to a reveal
+ * - inset_rail : railed inset — flush in the opening, a rail between every face
+ * - inset      : full inset — flush in the opening, faces separated by gaps only
  */
-export type Overlay = "full" | "inset";
+export type Overlay = "full" | "inset_rail" | "inset";
 
 export type Units = "in" | "mm";
 

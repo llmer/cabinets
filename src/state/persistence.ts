@@ -36,7 +36,7 @@ function migrateCabinet(raw: Partial<Cabinet>): Cabinet {
     construction: raw.construction === "framed" ? "framed" : "frameless",
     // Pre-overlay projects rendered framed=inset, frameless=full; preserve that look.
     overlay:
-      raw.overlay === "inset" || raw.overlay === "full"
+      raw.overlay === "inset" || raw.overlay === "inset_rail" || raw.overlay === "full"
         ? raw.overlay
         : raw.construction === "framed"
           ? "inset"

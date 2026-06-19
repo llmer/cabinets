@@ -102,9 +102,13 @@ only when cabinets or settings actually change.
   shallower so finished depth holds).
 - **Face frame**: adds a 1 1/2" hardwood face frame (listed separately by the
   linear foot, *not* nested in the plywood sheets).
-- **Front fit** is a separate axis: *full overlay* fronts cover the box/frame to
-  a 1/8" reveal; *inset* fronts sit flush inside the openings (recessed behind
-  the face-frame stiles when framed, or the box edge when frameless).
+- **Front fit** is a separate axis with three options: *full overlay* (fronts
+  proud, covering the box/frame to a 1/8" reveal); *railed inset* (flush in the
+  openings with a rail between every stacked face — listed as "Inset rail" parts,
+  32 mm rows shift back ~56 mm); and *flush inset* (flush, gaps only, no rails).
+- **Drawer boxes** get their own plan: the Build view lists each box's
+  W×D×H, the side / front-back / bottom part sizes, and a short build note
+  (1/2" ply sides, 1/4" captured bottom, 1" narrower than the opening).
 - Base cabinets use two 4" top stretchers; wall/tall use a full top.
 - Drawer boxes default to 1/2" ply sides with a 1/4" captured bottom, 1" narrower
   than the opening for side-mount slides. Toggle off in Settings.
