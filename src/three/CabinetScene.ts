@@ -12,6 +12,7 @@ import {
   isRailInset,
 } from "@/engine/geometry";
 import { getDrawerHeights } from "@/engine/drawers";
+import { drawerBoxSpecs } from "@/engine/parts";
 
 type ViewPreset = "iso" | "front" | "top";
 
@@ -231,28 +232,48 @@ export class CabinetScene {
       this.addBox(x0 + matT, x1 - matT, yT - matT, yT, 0, cd, carcass);
     }
     if (!openBox) this.addBox(x0, x1, yB, yT, 0, backT, carcass);
+    // Recessed toe-kick plinth, set back from the FRONT (was a stray board at the back).
     if (c.type !== "wall" && c.toeKick !== false && !openBox && yB > 0) {
-      this.addBox(x0, x1, 0, yB, 3, 3 + matT, carcass);
+      this.addBox(x0, x1, 0, yB, 0, Math.max(matT, D - S.toeKickDepth), carcass);
     }
-    if (!this.showFronts && !openBox && c.shelves > 0) {
-      for (let i = 1; i <= c.shelves; i++) {
-        const sy = yB + matT + ((boxH - 2 * matT) * i) / (c.shelves + 1);
-        this.addBox(x0 + matT, x1 - matT, sy, sy + 0.75, backT, cd - 1, this.matCarcassIn);
-      }
-    }
-    if (!this.showFronts || opening) return;
 
     const fm = this.frontMat(colorFor(idx));
     const fz0 = D - 0.75;
     const fz1 = D;
     const gap = 0.125;
+
+    // Fronts hidden: reveal the interior — adjustable shelves + drawer boxes.
+    if (!this.showFronts) {
+      if (!openBox && c.shelves > 0) {
+        for (let i = 1; i <= c.shelves; i++) {
+          const sy = yB + matT + ((boxH - 2 * matT) * i) / (c.shelves + 1);
+          this.addBox(x0 + matT, x1 - matT, sy, sy + 0.75, backT, cd - 1, this.matCarcassIn);
+        }
+      }
+      this.addDrawerBoxes3D(c, x0, yT, fz0);
+      return;
+    }
+
+    // Appliance opening: no front — just the face-frame surround when framed.
+    if (opening) {
+      if (framed) {
+        const ff = S.frameWidth || 1.5;
+        this.addBox(x0, x0 + ff, yB, yT, fz0, fz1, fm);
+        this.addBox(x1 - ff, x1, yB, yT, fz0, fz1, fm);
+        this.addBox(x0 + ff, x1 - ff, yT - ff, yT, fz0, fz1, fm);
+      }
+      return;
+    }
+
+    const cabCenter = (x0 + x1) / 2;
     const hbar = (xa: number, xb: number, ya: number, yb: number, vertical: boolean) => {
       if (vertical) {
-        const hx = xb - 1.1;
-        this.addBox(hx, hx + 0.5, (ya + yb) / 2 - 2.2, (ya + yb) / 2 + 2.2, fz1, fz1 + 0.45, this.matHandle);
+        // door pull on the inner (opening) edge, toward the cabinet centerline
+        const hx = (xa + xb) / 2 < cabCenter ? xb - 1.4 : xa + 0.9;
+        this.addBox(hx, hx + 0.5, (ya + yb) / 2 - 2.4, (ya + yb) / 2 + 2.4, fz1, fz1 + 0.5, this.matHandle);
       } else {
         const hy = yb - 1.0;
-        this.addBox((xa + xb) / 2 - 2.2, (xa + xb) / 2 + 2.2, hy, hy + 0.5, fz1, fz1 + 0.45, this.matHandle);
+        this.addBox((xa + xb) / 2 - 2.6, (xa + xb) / 2 + 2.6, hy, hy + 0.5, fz1, fz1 + 0.5, this.matHandle);
       }
     };
 
@@ -349,6 +370,42 @@ export class CabinetScene {
         hbar(a, b, ob, dt, true);
       }
     }
+  }
+
+  /** Open drawer boxes drawn inside the carcass when fronts are hidden. */
+  private addDrawerBoxes3D(c: Cabinet, x0: number, yT: number, fz0: number) {
+    const hasDrawers =
+      c.frontStyle === "drawers" || c.frontStyle === "desk" || c.frontStyle === "door_drawer";
+    if (!hasDrawers) return;
+    const S = this.settings;
+    const specs = drawerBoxSpecs(c, S);
+    if (!specs.length) return;
+    const dt = S.stocks[S.roleStock.drawerBox].thickness;
+    const bt = S.stocks[S.roleStock.drawerBottom].thickness;
+    const inset = isInset(c);
+    const ff = inset ? effectiveFrameWidth(c, S) : 0.125;
+    const railGap = inset ? insetStackGap(c, S) : 0.125;
+    const heights = getDrawerHeights(c, S);
+    const W = c.width;
+    const m = this.matCarcassIn;
+    let top = yT - ff;
+    heights.forEach((dh, i) => {
+      const sp = specs[i];
+      if (!sp) return;
+      const slotBottom = top - dh;
+      const bx0 = x0 + (W - sp.boxWidth) / 2;
+      const bx1 = bx0 + sp.boxWidth;
+      const bz1 = fz0 - 0.25;
+      const bz0 = Math.max(0.75, bz1 - sp.boxDepth);
+      const by0 = slotBottom + 0.25;
+      const by1 = Math.max(by0 + 1, Math.min(top - 0.25, by0 + sp.boxHeight));
+      this.addBox(bx0, bx0 + dt, by0, by1, bz0, bz1, m); // left side
+      this.addBox(bx1 - dt, bx1, by0, by1, bz0, bz1, m); // right side
+      this.addBox(bx0, bx1, by0, by1, bz1 - dt, bz1, m); // sub-front
+      this.addBox(bx0, bx1, by0, by1, bz0, bz0 + dt, m); // back
+      this.addBox(bx0, bx1, by0, by0 + bt, bz0, bz1, m); // bottom
+      top = slotBottom - (i < heights.length - 1 ? railGap : 0);
+    });
   }
 
   private rebuild() {
