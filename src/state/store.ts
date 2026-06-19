@@ -1,0 +1,329 @@
+import { create } from "zustand";
+import {
+  defaultCabinet,
+  newProject,
+  nextId,
+} from "@/domain/defaults";
+import {
+  Cabinet,
+  CabinetType,
+  Construction,
+  FrontStyle,
+  HardwarePricing,
+  Project,
+  Role,
+  Settings,
+  Stock,
+  StockId,
+} from "@/domain/types";
+import { defaultHeights, evenHeights, withDrawerHeight } from "@/engine/drawers";
+import { loadProject, saveProject } from "./persistence";
+
+export type ViewId = "layout" | "cutlist" | "sheets" | "build" | "3d" | "settings";
+
+const HISTORY_LIMIT = 60;
+const BASE_ONLY_FRONTS: FrontStyle[] = ["drawers", "door_drawer", "desk"];
+
+interface AppState {
+  project: Project;
+  view: ViewId;
+  selectedId: string | null;
+  dragId: string | null;
+  showFronts: boolean;
+  /** Free-form text drafts for number fields (committed on blur/Enter). */
+  drafts: Record<string, string>;
+  past: Project[];
+  future: Project[];
+  toast: string | null;
+
+  /* selectors */
+  cabinets: () => Cabinet[];
+  settings: () => Settings;
+  selected: () => Cabinet | null;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+
+  /* ui / navigation */
+  setView: (v: ViewId) => void;
+  selectCab: (id: string | null) => void;
+  beginDrag: (id: string) => void;
+  endDrag: () => void;
+  setShowFronts: (v: boolean) => void;
+  setDraft: (key: string, value: string) => void;
+  clearDraft: (key: string) => void;
+  setToast: (msg: string | null) => void;
+
+  /* project lifecycle */
+  resetProject: () => void;
+  loadProjectObj: (p: Project) => void;
+  renameProject: (name: string) => void;
+  undo: () => void;
+  redo: () => void;
+
+  /* cabinet mutations */
+  updateCab: (id: string, patch: Partial<Cabinet>) => void;
+  addCab: (type: CabinetType) => void;
+  removeCab: (id: string) => void;
+  duplicateCab: (id: string) => void;
+  reorderBand: (band: "base" | "wall", orderedIds: string[], history?: boolean) => void;
+  setCabinetType: (id: string, type: CabinetType) => void;
+  setFrontStyle: (id: string, style: FrontStyle) => void;
+  setDrawerCount: (id: string, n: number) => void;
+  resetDrawerHeights: (id: string) => void;
+  setDrawerHeightAt: (id: string, i: number, value: number) => void;
+  setConstructionAll: (mode: Construction) => void;
+
+  /* settings mutations */
+  updateSettings: (patch: Partial<Settings>) => void;
+  updateStock: (id: StockId, patch: Partial<Stock>) => void;
+  setRoleStock: (role: Role, stockId: StockId) => void;
+  updateHardware: (patch: Partial<HardwarePricing>) => void;
+}
+
+function bandOf(c: Cabinet): "base" | "wall" {
+  return c.type === "wall" ? "wall" : "base";
+}
+
+const ALL_VIEWS: ViewId[] = ["layout", "cutlist", "sheets", "build", "3d", "settings"];
+
+/** Initial view comes from the URL hash (#cutlist …) so tabs are deep-linkable. */
+function initialView(): ViewId {
+  if (typeof window === "undefined") return "layout";
+  const h = window.location.hash.replace("#", "") as ViewId;
+  return ALL_VIEWS.includes(h) ? h : "layout";
+}
+
+export const useStore = create<AppState>((set, get) => {
+  /** Apply a new project; optionally record undo history + autosave. */
+  function apply(next: Project, history = true) {
+    next.updatedAt = Date.now();
+    set((s) => {
+      const base = {
+        project: next,
+        past: history ? [...s.past, s.project].slice(-HISTORY_LIMIT) : s.past,
+        future: history ? [] : s.future,
+      };
+      return base;
+    });
+    saveProject(get().project);
+  }
+
+  /** Mutate the cabinets list immutably. */
+  function withCabinets(fn: (cabs: Cabinet[]) => Cabinet[], history = true) {
+    const p = get().project;
+    apply({ ...p, cabinets: fn(p.cabinets) }, history);
+  }
+
+  function patchCab(id: string, patch: Partial<Cabinet>) {
+    withCabinets((cabs) => cabs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }
+
+  return {
+    project: loadProject(),
+    view: initialView(),
+    selectedId: null,
+    dragId: null,
+    showFronts: true,
+    drafts: {},
+    past: [],
+    future: [],
+    toast: null,
+
+    cabinets: () => get().project.cabinets,
+    settings: () => get().project.settings,
+    selected: () => {
+      const { project, selectedId } = get();
+      return project.cabinets.find((c) => c.id === selectedId) ?? null;
+    },
+    canUndo: () => get().past.length > 0,
+    canRedo: () => get().future.length > 0,
+
+    setView: (v) => set({ view: v }),
+    selectCab: (id) => set({ selectedId: id }),
+    beginDrag: (id) => {
+      // snapshot once so the whole drag is a single undo step
+      const p = get().project;
+      set((s) => ({
+        dragId: id,
+        selectedId: id,
+        past: [...s.past, p].slice(-HISTORY_LIMIT),
+        future: [],
+      }));
+    },
+    endDrag: () => set({ dragId: null }),
+    setShowFronts: (v) => set({ showFronts: v }),
+    setDraft: (key, value) =>
+      set((s) => ({ drafts: { ...s.drafts, [key]: value } })),
+    clearDraft: (key) =>
+      set((s) => {
+        const d = { ...s.drafts };
+        delete d[key];
+        return { drafts: d };
+      }),
+    setToast: (msg) => set({ toast: msg }),
+
+    resetProject: () => {
+      const p = newProject();
+      apply(p);
+      set({ selectedId: p.cabinets[0]?.id ?? null, view: "layout", drafts: {} });
+    },
+    loadProjectObj: (p) => {
+      apply(p);
+      set({ selectedId: p.cabinets[0]?.id ?? null, view: "layout", drafts: {} });
+    },
+    renameProject: (name) => apply({ ...get().project, name }, false),
+
+    undo: () =>
+      set((s) => {
+        if (!s.past.length) return s;
+        const prev = s.past[s.past.length - 1];
+        const next = { project: prev, past: s.past.slice(0, -1), future: [s.project, ...s.future] };
+        saveProject(prev);
+        return next;
+      }),
+    redo: () =>
+      set((s) => {
+        if (!s.future.length) return s;
+        const nextProj = s.future[0];
+        const next = { project: nextProj, past: [...s.past, s.project], future: s.future.slice(1) };
+        saveProject(nextProj);
+        return next;
+      }),
+
+    updateCab: (id, patch) => patchCab(id, patch),
+
+    addCab: (type) => {
+      const prefix = type === "wall" ? "W" : type === "tall" ? "T" : "B";
+      const n = get().project.cabinets.filter((c) => c.type === type).length + 1;
+      const cab: Cabinet = { id: nextId(), name: prefix + n, ...defaultCabinet(type) };
+      withCabinets((cabs) => [...cabs, cab]);
+      set({ selectedId: cab.id });
+    },
+
+    removeCab: (id) => {
+      const remaining = get().project.cabinets.filter((c) => c.id !== id);
+      withCabinets(() => remaining);
+      if (get().selectedId === id)
+        set({ selectedId: remaining[0]?.id ?? null });
+    },
+
+    duplicateCab: (id) => {
+      const src = get().project.cabinets.find((c) => c.id === id);
+      if (!src) return;
+      const prefix = src.type === "wall" ? "W" : src.type === "tall" ? "T" : "B";
+      const n = get().project.cabinets.filter((c) => c.type === src.type).length + 1;
+      const copy: Cabinet = { ...src, id: nextId(), name: prefix + n };
+      withCabinets((cabs) => {
+        const i = cabs.findIndex((c) => c.id === id);
+        const arr = cabs.slice();
+        arr.splice(i + 1, 0, copy);
+        return arr;
+      });
+      set({ selectedId: copy.id });
+    },
+
+    reorderBand: (band, orderedIds, history = false) => {
+      withCabinets((cabs) => {
+        let k = 0;
+        return cabs.map((c) => (bandOf(c) === band ? byId(cabs, orderedIds[k++]) : c));
+      }, history);
+    },
+
+    setCabinetType: (id, type) => {
+      const sel = get().project.cabinets.find((c) => c.id === id);
+      if (!sel) return;
+      const patch: Partial<Cabinet> = { type };
+      if (type !== "base" && BASE_ONLY_FRONTS.includes(sel.frontStyle))
+        patch.frontStyle = "doors";
+      if (type === "wall" && sel.depth >= 18) patch.depth = 12;
+      if (type === "tall" && sel.height < 60) patch.height = 84;
+      patchCab(id, patch);
+    },
+
+    setFrontStyle: (id, style) => {
+      const sel = get().project.cabinets.find((c) => c.id === id);
+      if (!sel) return;
+      const patch: Partial<Cabinet> = { frontStyle: style };
+      if (style === "desk") {
+        patch.toeKick = false;
+        patch.shelves = 0;
+        if (sel.drawerCount < 1) patch.drawerCount = 1;
+      }
+      if (style === "opening") {
+        patch.toeKick = false;
+        patch.shelves = 0;
+      }
+      const tmp = { ...sel, ...patch };
+      patch.drawerHeights = defaultHeights(tmp, get().project.settings);
+      patchCab(id, patch);
+    },
+
+    setDrawerCount: (id, n) => {
+      const sel = get().project.cabinets.find((c) => c.id === id);
+      if (!sel) return;
+      patchCab(id, {
+        drawerCount: n,
+        drawerHeights: evenHeights(sel, n, get().project.settings),
+      });
+    },
+
+    resetDrawerHeights: (id) => {
+      const sel = get().project.cabinets.find((c) => c.id === id);
+      if (!sel) return;
+      patchCab(id, { drawerHeights: defaultHeights(sel, get().project.settings) });
+    },
+
+    setDrawerHeightAt: (id, i, value) => {
+      const sel = get().project.cabinets.find((c) => c.id === id);
+      if (!sel) return;
+      patchCab(id, {
+        drawerHeights: withDrawerHeight(sel, get().project.settings, i, value),
+      });
+    },
+
+    setConstructionAll: (mode) =>
+      withCabinets((cabs) => cabs.map((c) => ({ ...c, construction: mode }))),
+
+    updateSettings: (patch) =>
+      apply({ ...get().project, settings: { ...get().project.settings, ...patch } }),
+
+    updateStock: (id, patch) => {
+      const s = get().project.settings;
+      apply({
+        ...get().project,
+        settings: {
+          ...s,
+          stocks: { ...s.stocks, [id]: { ...s.stocks[id], ...patch } },
+        },
+      });
+    },
+
+    setRoleStock: (role, stockId) => {
+      const s = get().project.settings;
+      apply({
+        ...get().project,
+        settings: { ...s, roleStock: { ...s.roleStock, [role]: stockId } },
+      });
+    },
+
+    updateHardware: (patch) => {
+      const s = get().project.settings;
+      apply({
+        ...get().project,
+        settings: { ...s, hardware: { ...s.hardware, ...patch } },
+      });
+    },
+  };
+});
+
+function byId(cabs: Cabinet[], id: string): Cabinet {
+  const c = cabs.find((x) => x.id === id);
+  if (!c) throw new Error("reorder: missing cabinet " + id);
+  return c;
+}
+
+/** Initialize selection to the first cabinet on first load. */
+const initial = useStore.getState();
+if (!initial.selectedId && initial.project.cabinets.length) {
+  useStore.setState({ selectedId: initial.project.cabinets[0].id });
+}
