@@ -56,7 +56,9 @@ export class CabinetScene {
     this.mount = mount;
     const scene = (this.scene = new THREE.Scene());
     scene.background = new THREE.Color(T.background);
-    this.camera = new THREE.PerspectiveCamera(42, 1.6, 1, 9000);
+    // Tight near/far ratio keeps depth-buffer precision high (avoids z-fighting
+    // on the carcass joints). The run is ~tens of inches; orbit radius caps at 900.
+    this.camera = new THREE.PerspectiveCamera(42, 1.6, 4, 3000);
 
     const r = (this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true }));
     r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -72,6 +74,9 @@ export class CabinetScene {
     dir.castShadow = true;
     dir.shadow.mapSize.width = 2048;
     dir.shadow.mapSize.height = 2048;
+    // Bias away shadow acne on the large flat door/drawer faces.
+    dir.shadow.bias = -0.0004;
+    dir.shadow.normalBias = 0.4;
     const sc = dir.shadow.camera;
     sc.left = -200;
     sc.right = 200;
@@ -231,7 +236,9 @@ export class CabinetScene {
     } else {
       this.addBox(x0 + matT, x1 - matT, yT - matT, yT, 0, cd, carcass);
     }
-    if (!openBox) this.addBox(x0, x1, yB, yT, 0, backT, carcass);
+    // Back sits between the sides (not full width) so it doesn't share faces
+    // with the side panels — eliminates corner z-fighting.
+    if (!openBox) this.addBox(x0 + matT, x1 - matT, yB, yT, 0, backT, carcass);
     // Recessed toe-kick plinth, set back from the FRONT (was a stray board at the back).
     if (c.type !== "wall" && c.toeKick !== false && !openBox && yB > 0) {
       this.addBox(x0, x1, 0, yB, 0, Math.max(matT, D - S.toeKickDepth), carcass);
