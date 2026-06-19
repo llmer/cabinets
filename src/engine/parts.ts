@@ -215,9 +215,11 @@ export function drawerBoxSpecs(c: Cabinet, s: Settings): DrawerBoxSpec[] {
   if (!hasDrawers(c)) return [];
   const dt = s.stocks[s.roleStock.drawerBox].thickness;
   const bt = s.stocks[s.roleStock.drawerBottom].thickness;
-  const interiorW = r3(c.width - 2 * carcassThickness(s));
+  // The box must clear the front aperture: the face-frame opening when framed,
+  // otherwise the carcass interior. Frameless: opening === interior (unchanged).
+  const opening = r3(c.width - 2 * effectiveFrameWidth(c, s));
   const cDepth = carcassDepth(c, s);
-  const boxW = r3(interiorW - 1);
+  const boxW = r3(opening - 1);
   const boxDepth = Math.max(6, Math.floor(cDepth - 1));
   return getDrawerHeights(c, s).map((dh, i) => {
     const sideH = r3(Math.max(2.5, dh - 1));

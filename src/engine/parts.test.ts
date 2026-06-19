@@ -219,6 +219,20 @@ describe("drawerBoxSpecs", () => {
     const c = makeCabinet("base", "B", { frontStyle: "doors" });
     expect(drawerBoxSpecs(c, S)).toHaveLength(0);
   });
+
+  it("sizes the box to the face-frame opening (framed), so it clears the frame", () => {
+    const c = makeCabinet("base", "B", {
+      width: 24,
+      frontStyle: "drawers",
+      drawerCount: 3,
+      construction: "framed",
+      overlay: "inset",
+    });
+    const opening = 24 - 2 * 1.5; // 21" face-frame opening
+    const sp = drawerBoxSpecs(c, S)[0];
+    expect(sp.boxWidth).toBe(20); // opening 21 - 1 for slides
+    expect(sp.boxWidth).toBeLessThanOrEqual(opening); // must pass through the frame
+  });
 });
 
 describe("genParts — open boxes", () => {

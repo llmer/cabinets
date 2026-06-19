@@ -1,6 +1,6 @@
 import { CabinetParts, Settings } from "@/domain/types";
 import { bandingInchesPerPiece } from "./parts";
-import { isRailInset } from "./geometry";
+import { effectiveFrameWidth, isRailInset } from "./geometry";
 import { hingesForDoorHeight } from "./hardware";
 import { typeLabel } from "./labels";
 import { fmtLen } from "./units";
@@ -133,14 +133,17 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
     .filter((p) => p.name === "Drawer front")
     .reduce((a, p) => a + p.qty, 0);
   if (drw > 0) {
-    const bw = fmtLen(g.interiorWidth - 1, u);
+    const bw = fmtLen(c.width - 2 * effectiveFrameWidth(c, s) - 1, u);
     const bd = fmtLen(Math.floor(g.carcassDepth - 1), u);
+    const ffNote = g.framed
+      ? ' The box is sized to the face-frame opening, so bridge the side-mount slides out to the carcass with rear sockets or ~1" spacers.'
+      : "";
     push(
-      `Mount drawer slides dead level at each opening. Build ${drw} drawer box${drw > 1 ? "es" : ""} (${bw} wide × ${bd} deep, 1/2\" ply sides with a 1/4\" captured bottom — see the per-drawer sizes below), fit them, then attach the fronts to a 1/8" reveal.`,
+      `Mount drawer slides dead level at each opening. Build ${drw} drawer box${drw > 1 ? "es" : ""} (${bw} wide × ${bd} deep, 1/2\" ply sides with a 1/4\" captured bottom — see the per-drawer sizes below), fit them, then attach the fronts to a 1/8" reveal.${ffNote}`,
     );
   }
 
-  if (c.shelves > 0)
+  if (c.shelves > 0 && !g.openBox)
     push(
       `Drop in ${c.shelves} adjustable shelf${c.shelves > 1 ? "es" : ""} on pins at your chosen heights. Done.`,
     );

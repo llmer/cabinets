@@ -52,6 +52,7 @@ export function BuildView() {
 
       {stepGroups.map((sg) => {
         const specs = specsById.get(sg.id) ?? [];
+        const framed = cabinetParts.find((cp) => cp.cabinet.id === sg.id)?.geometry.framed ?? false;
         return (
           <div key={sg.id} style={{ margin: "22px 0", border: `1px solid ${color.border}`, borderRadius: 8, background: color.panel, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 18px", background: color.panelAlt, borderBottom: `1px solid ${color.border}` }}>
@@ -102,7 +103,10 @@ export function BuildView() {
                   </table>
                   <div style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, marginTop: 6, lineHeight: 1.5 }}>
                     Groove the 1/4&quot; bottom 1/4&quot; up from the bottom edge of all four box parts; glue + pin the sides to the
-                    front &amp; back, slide the bottom in (no glue), check square, then mount on the slides 1&quot; narrower than the opening.
+                    front &amp; back, slide the bottom in (no glue), check square, then mount on the slides.
+                    {framed
+                      ? " The box is sized to the face-frame opening — bridge the side-mount slides out to the carcass with rear sockets or ~1\" spacers."
+                      : " The box is 1\" narrower than the opening for the slides."}
                   </div>
                 </div>
               )}
