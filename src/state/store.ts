@@ -18,9 +18,22 @@ import {
   StockId,
 } from "@/domain/types";
 import { defaultHeights, evenHeights, withDrawerHeight } from "@/engine/drawers";
-import { loadProject, saveProject } from "./persistence";
+import {
+  loadBuildProgress,
+  loadProject,
+  saveBuildProgress,
+  saveProject,
+} from "./persistence";
 
 export type ViewId = "layout" | "cutlist" | "sheets" | "build" | "3d" | "settings";
+
+/** Build view shows either the full step list or a focused, one-step walkthrough. */
+export type BuildMode = "overview" | "guided";
+
+/** Stable key for one assembly step: cabinet id + its 1-based step number. */
+export function stepKey(cabinetId: string, n: number): string {
+  return `${cabinetId}:${n}`;
+}
 
 const HISTORY_LIMIT = 60;
 const BASE_ONLY_FRONTS: FrontStyle[] = ["drawers", "door_drawer", "desk"];
@@ -36,6 +49,13 @@ interface AppState {
   past: Project[];
   future: Project[];
   toast: string | null;
+
+  /* build walkthrough (interaction state — never feeds compute) */
+  buildMode: BuildMode;
+  /** Steps the user has ticked off, keyed by stepKey(cabinetId, n). */
+  buildDone: Record<string, boolean>;
+  /** Position in the flattened step sequence while in guided mode. */
+  buildCursor: number;
 
   /* selectors */
   cabinets: () => Cabinet[];
@@ -53,6 +73,13 @@ interface AppState {
   setDraft: (key: string, value: string) => void;
   clearDraft: (key: string) => void;
   setToast: (msg: string | null) => void;
+
+  /* build walkthrough */
+  setBuildMode: (mode: BuildMode) => void;
+  setBuildCursor: (i: number) => void;
+  setStepDone: (key: string, done: boolean) => void;
+  toggleStepDone: (key: string) => void;
+  resetBuildProgress: () => void;
 
   /* project lifecycle */
   resetProject: () => void;
@@ -112,6 +139,15 @@ export const useStore = create<AppState>((set, get) => {
     saveProject(get().project);
   }
 
+  /** Persist the current walkthrough progress under the active project's id. */
+  function persistBuild(done: Record<string, boolean>) {
+    const p = get().project;
+    // The seed project gets a fresh random id every load until it is saved, so
+    // pin it down now — otherwise progress keyed by id can't match on reload.
+    saveProject(p);
+    saveBuildProgress(p.id, done);
+  }
+
   /** Mutate the cabinets list immutably. */
   function withCabinets(fn: (cabs: Cabinet[]) => Cabinet[], history = true) {
     const p = get().project;
@@ -122,8 +158,10 @@ export const useStore = create<AppState>((set, get) => {
     withCabinets((cabs) => cabs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
+  const initialProject = loadProject();
+
   return {
-    project: loadProject(),
+    project: initialProject,
     view: initialView(),
     selectedId: null,
     dragId: null,
@@ -132,6 +170,10 @@ export const useStore = create<AppState>((set, get) => {
     past: [],
     future: [],
     toast: null,
+
+    buildMode: "overview",
+    buildDone: loadBuildProgress(initialProject.id),
+    buildCursor: 0,
 
     cabinets: () => get().project.cabinets,
     settings: () => get().project.settings,
@@ -166,14 +208,54 @@ export const useStore = create<AppState>((set, get) => {
       }),
     setToast: (msg) => set({ toast: msg }),
 
+    setBuildMode: (mode) => set({ buildMode: mode }),
+    setBuildCursor: (i) => set({ buildCursor: Math.max(0, i) }),
+    setStepDone: (key, done) =>
+      set((s) => {
+        if (!!s.buildDone[key] === done) return s;
+        const next = { ...s.buildDone };
+        if (done) next[key] = true;
+        else delete next[key];
+        persistBuild(next);
+        return { buildDone: next };
+      }),
+    toggleStepDone: (key) =>
+      set((s) => {
+        const next = { ...s.buildDone };
+        if (next[key]) delete next[key];
+        else next[key] = true;
+        persistBuild(next);
+        return { buildDone: next };
+      }),
+    resetBuildProgress: () =>
+      set(() => {
+        persistBuild({});
+        return { buildDone: {}, buildCursor: 0 };
+      }),
+
     resetProject: () => {
       const p = newProject();
       apply(p);
-      set({ selectedId: p.cabinets[0]?.id ?? null, view: "layout", drafts: {} });
+      saveBuildProgress(p.id, {});
+      set({
+        selectedId: p.cabinets[0]?.id ?? null,
+        view: "layout",
+        drafts: {},
+        buildDone: {},
+        buildCursor: 0,
+        buildMode: "overview",
+      });
     },
     loadProjectObj: (p) => {
       apply(p);
-      set({ selectedId: p.cabinets[0]?.id ?? null, view: "layout", drafts: {} });
+      set({
+        selectedId: p.cabinets[0]?.id ?? null,
+        view: "layout",
+        drafts: {},
+        buildDone: loadBuildProgress(p.id),
+        buildCursor: 0,
+        buildMode: "overview",
+      });
     },
     renameProject: (name) => apply({ ...get().project, name }, false),
 

@@ -5,9 +5,16 @@ import { hingesForDoorHeight } from "./hardware";
 import { typeLabel } from "./labels";
 import { fmtLen } from "./units";
 
+/**
+ * A step may carry a `kind` so the interactive walkthrough can attach the
+ * matching reference panel (e.g. the per-drawer box sizing table) to it.
+ */
+export type StepKind = "drawerBoxes";
+
 export interface Step {
   n: number;
   t: string;
+  kind?: StepKind;
 }
 
 export interface StepGroup {
@@ -28,7 +35,8 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
   const { cabinet: c, geometry: g, parts } = cp;
   const u = s.units;
   const steps: Step[] = [];
-  const push = (t: string) => steps.push({ n: steps.length + 1, t });
+  const push = (t: string, kind?: StepKind) =>
+    steps.push({ n: steps.length + 1, t, kind });
 
   const pieces = parts.reduce((a, p) => a + p.qty, 0);
   const bandFt = Math.ceil(
@@ -140,6 +148,7 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
       : "";
     push(
       `Mount drawer slides dead level at each opening. Build ${drw} drawer box${drw > 1 ? "es" : ""} (${bw} wide × ${bd} deep, 1/2\" ply sides with a 1/4\" captured bottom — see the per-drawer sizes below), fit them, then attach the fronts to a 1/8" reveal.${ffNote}`,
+      "drawerBoxes",
     );
   }
 

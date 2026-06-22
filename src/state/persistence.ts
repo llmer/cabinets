@@ -88,6 +88,45 @@ export function clearStorage(): void {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Build-walkthrough progress                                          */
+/*                                                                     */
+/* Which assembly steps the user has ticked off. This is interaction   */
+/* state, NOT domain truth — it never feeds the compute pipeline — so   */
+/* it lives under its own key, away from the project JSON. Tagged with  */
+/* the project id so a different loaded project starts fresh while a    */
+/* page reload of the same project keeps your checkmarks.              */
+/* ------------------------------------------------------------------ */
+
+const BUILD_KEY = "framecess.build.v1";
+
+interface BuildProgressBlob {
+  projectId: string;
+  done: Record<string, boolean>;
+}
+
+export function loadBuildProgress(projectId: string): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(BUILD_KEY);
+    if (!raw) return {};
+    const blob = JSON.parse(raw) as Partial<BuildProgressBlob>;
+    if (!blob || blob.projectId !== projectId || !blob.done) return {};
+    const out: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(blob.done)) if (v === true) out[k] = true;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveBuildProgress(projectId: string, done: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(BUILD_KEY, JSON.stringify({ projectId, done }));
+  } catch {
+    /* storage full or unavailable — progress just won't persist */
+  }
+}
+
 /** Trigger a browser download of the project as a .json file. */
 export function exportProjectFile(project: Project): void {
   const data = JSON.stringify(project, null, 2);
