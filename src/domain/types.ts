@@ -52,6 +52,13 @@ export interface Cabinet {
   overlay: Overlay;
   /** Optional per-drawer FRONT heights (inches). When absent, an even split is used. */
   drawerHeights?: number[];
+  /**
+   * Start a new run *before* this cabinet — even when it would otherwise join
+   * the previous one. The escape hatch for a corner, an appliance gap, an
+   * island, or a separate wall, so a continuous face frame / toe-kick base
+   * never spans a physical break. Absent = false (joins where contiguous).
+   */
+  runBreak?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -67,7 +74,9 @@ export type Role =
   | "front"
   | "drawerBox"
   | "drawerBottom"
-  | "faceFrame";
+  | "faceFrame"
+  /** Toe-kick base ladder + recessed fascia + side returns (run-level). */
+  | "base";
 
 export type StockId = string;
 
@@ -108,6 +117,26 @@ export interface Settings {
   /** Toe-kick height (inches) and how far it is recessed from the front. */
   toeKick: number;
   toeKickDepth: number;
+  /** How far the toe-kick is recessed on an exposed END of a run (inches). */
+  toeKickSideRecess: number;
+  /**
+   * Skin one continuous face frame across each run of joined framed cabinets —
+   * shared stiles at every joint, rails spanning each bay — instead of a
+   * separate frame per box. Off = a frame per cabinet (the old behaviour).
+   */
+  continuousFaceFrame: boolean;
+  /**
+   * Model the toe kick as a real, separate plywood base "ladder" + recessed
+   * fascia (with side returns on exposed ends) carried in the cut list, rather
+   * than a bare height offset. Off = the toe kick is geometry only, no parts.
+   */
+  separateBase: boolean;
+  /**
+   * Height of the bottom of the face frame off the finished floor (inches).
+   * The frame drops to here over a toe-kicked run, overhanging the recessed
+   * toe-kick fascia below it. Only meaningful with a toe kick present.
+   */
+  faceFrameFloorGap: number;
   /** Height from finished floor to the bottom of wall cabinets (inches). */
   upperBottom: number;
   /** Finished counter height (guide line only). */

@@ -2,8 +2,9 @@ import { useRef } from "react";
 import { Cabinet } from "@/domain/types";
 import { color, colorFor, font } from "@/theme";
 import { fmtLen } from "@/engine/units";
+import { runsOf } from "@/engine/runs";
 import { useStore } from "@/state/store";
-import { renderFace } from "./cabFace";
+import { RunEnds, renderFace } from "./cabFace";
 
 function bandOf(c: Cabinet): "base" | "wall" {
   return c.type === "wall" ? "wall" : "base";
@@ -37,6 +38,13 @@ export function Elevation() {
 
   const layout: Record<string, number> = {};
 
+  // Which cabinets sit at an exposed run end — drives shared stiles + the
+  // recessed toe-kick base set-in.
+  const runEnds = new Map<string, RunEnds>();
+  for (const run of runsOf(cabinets, s))
+    for (const m of run.members) runEnds.set(m.cabinet.id, { leftEnd: m.leftEnd, rightEnd: m.rightEnd });
+  const endsOf = (id: string): RunEnds => runEnds.get(id) ?? { leftEnd: true, rightEnd: true };
+
   function onMove(e: React.PointerEvent, c: Cabinet) {
     if (dragId !== c.id || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -62,25 +70,27 @@ export function Elevation() {
     const hgt = c.height * ppi;
     const sel = selectedId === c.id;
     const drag = dragId === c.id;
-    const tkPx =
-      c.type !== "wall" && c.toeKick !== false && c.frontStyle !== "desk" && c.frontStyle !== "opening"
-        ? s.toeKick * ppi
-        : 0;
-    const tkStrip =
-      c.type !== "wall" && c.toeKick !== false && c.frontStyle !== "desk" ? (
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: Math.max(2, s.toeKick * ppi),
-            background: "rgba(31,20,14,.13)",
-            borderTop: "1px solid rgba(31,20,14,.4)",
-            pointerEvents: "none",
-          }}
-        />
-      ) : null;
+    const ends = endsOf(c.id);
+    const based = c.type !== "wall" && c.toeKick !== false && c.frontStyle !== "desk";
+    // With a separate base the face frame drops to 3.25" off the floor over the
+    // recessed toe kick (overhanging the fascia); otherwise it stops at the box.
+    const tkH = s.separateBase ? s.faceFrameFloorGap : s.toeKick;
+    const tkPx = based && c.frontStyle !== "opening" ? tkH * ppi : 0;
+    const sideRec = s.separateBase ? s.toeKickSideRecess * ppi : 0;
+    const tkStrip = based ? (
+      <div
+        style={{
+          position: "absolute",
+          left: ends.leftEnd ? sideRec : 0,
+          right: ends.rightEnd ? sideRec : 0,
+          bottom: 0,
+          height: Math.max(2, tkH * ppi),
+          background: "rgba(31,20,14,.13)",
+          borderTop: "1px solid rgba(31,20,14,.4)",
+          pointerEvents: "none",
+        }}
+      />
+    ) : null;
     return (
       <div
         data-cab={c.id}
@@ -139,7 +149,7 @@ export function Elevation() {
             {c.name} · {fmtLen(c.width, s.units)}
           </span>
         </div>
-        {renderFace(c, accent, ppi, tkPx, s)}
+        {renderFace(c, accent, ppi, tkPx, s, ends)}
         {tkStrip}
       </div>
     );

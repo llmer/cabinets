@@ -73,11 +73,37 @@ modules feeding `compute`:
   height; plus the predicates `isFramed`/`isInset`/`isRailInset`/`isOpenBox`.
 - `drawers` — drawer-front height model (budget / even split / per-drawer clamp).
 - `parts` — cut-list generation (carcass, fronts, face frame, drawer boxes).
+  `genParts(c, s, frame?)` takes an optional `FrameContext`: when a continuous
+  run frame owns the face frame, it suppresses the per-cabinet stiles/rails and
+  re-keys the inset front WIDTH off the bay's run opening.
+- `runs` / `runParts` — the **run model** (see below).
 - `hardware`, `packing` (first-fit-decreasing sheet nesting), `cost`, `steps`,
   `labels`.
 
 When adding engine math: write the function pure, export it from its module, and
 add a golden-value test next to it (`*.test.ts` colocated in `src/engine/`).
+
+### Runs — the unit that owns shared structure
+
+Cabinets are independent boxes, but a real kitchen joins contiguous ones into a
+**run** that shares ONE continuous face frame (shared stiles at every joint,
+rails per bay) and ONE toe-kick base. A run is **derived, never stored**:
+`runs.ts:runsOf(cabinets, s)` walks each lane (base/tall vs wall) in array order
+— mirroring the renderers' `bx += c.width` — and breaks at a `Cabinet.runBreak`,
+or a type/height/depth/construction change. The only persisted hint is the
+per-cabinet `runBreak` escape hatch (corner / appliance gap / island), editable
+in the cabinet editor.
+
+`compute()` runs a per-cabinet pass then a **run-level pass**: `runParts.ts`
+emits the continuous frame (`genRunFrameParts`: `members+1` shared stiles, a
+per-bay bottom rail that grows down to `faceFrameFloorGap` over a toe kick) and
+the separate base (`genBaseParts`: a ply ladder + recessed fascia + side returns
+per contiguous toe-kicked segment). Both feed the SAME accumulators via an
+extracted `ingestPart()` and appear as synthetic `"Run"` cut groups. Toggled by
+`settings.continuousFaceFrame` / `separateBase` (both default ON; the geometry
+`boxHeight` is unchanged so drawer budgets don't move). The 3D (`CabinetScene`)
+and 2D (`Elevation`/`cabFace`) renderers re-derive the same run grouping so the
+shared half-stiles and side-recessed base line up with the cut list.
 
 ### Two orthogonal cabinet axes
 
@@ -112,6 +138,24 @@ stock (hardwood face frame) is priced by the foot and never nested into sheets.
   deep-linkable.
 - The 3D view (`three/CabinetScene.ts`, `views/ThreeView.tsx`) is `lazy`-loaded so
   Three.js stays out of the initial bundle. Keep it that way.
+- The build walkthrough's per-step 3D (`views/BuildStepScene.tsx`) reuses the same
+  `CabinetScene` via its **build-focus** mode: `setBuildFocus` renders ONE cabinet
+  staged for the current step — earlier stages solid, the current stage glowing,
+  later stages ghosted (plus a cutaway that reveals drawer boxes/shelves). The
+  staged geometry is a pure, unit-tested generator (`three/buildModel.ts`,
+  `cabinetBuildParts`) keyed by the `BuildStage` that `engine/steps.ts` now tags
+  onto every step. `BuildStepScene` is `lazy`-loaded too **and** gated behind a
+  `mounted` flag in `BuildView`, so the node smoke test never instantiates a WebGL
+  canvas. Built/ghost is decided by the set of stages actually reached in the
+  cabinet's step list (not a global stage order) — an appliance surround is framed
+  *before* it is stood in place, so `faceFrame` can precede `base`.
+  Step order follows real assembly: all **interior** work (`drawers` boxes,
+  `shelves` — the stages that auto-enable the cutaway) happens first, then the
+  **faces** go on last (`doors` → `drawerFronts` → `pulls`). Keeping faces after
+  the cutaway stages means a hung door is never hidden again, the drawer face gets
+  its own visible "attach the front" beat, and the walkthrough ends on the
+  finished box. Handles all live on the final `pulls` stage regardless of which
+  face they sit on.
 - Styling is inline via tokens from `theme.ts` — there is no CSS framework.
 - Vitest runs in a `node` environment (see `vite.config.ts`), so there is no DOM.
   The render smoke test (`app.smoke.test.tsx`) works around this by

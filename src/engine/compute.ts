@@ -10,7 +10,9 @@ import {
 } from "./hardware";
 import { typeLabel } from "./labels";
 import { PackRect, StockPack, packStock } from "./packing";
-import { bandingInchesPerPiece, genParts } from "./parts";
+import { FrameContext, bandingInchesPerPiece, genParts, mergeParts } from "./parts";
+import { Run, runsOf } from "./runs";
+import { genBaseParts, genRunFrameParts } from "./runParts";
 import { StepGroup, genSteps } from "./steps";
 import { fmtLen } from "./units";
 
@@ -82,6 +84,15 @@ function edgeStr(p: Part): string {
   return "—";
 }
 
+/** Name the synthetic run cut group by what it actually carries. */
+function runGroupName(run: Run, s: Settings): string {
+  const span = `${run.members[0].cabinet.name}–${run.members[run.members.length - 1].cabinet.name}`;
+  const frame = s.continuousFaceFrame && run.framed;
+  const base = s.separateBase && run.members.some((m) => m.hasBase);
+  const what = frame && base ? "Face frame + base" : frame ? "Face frame" : "Toe-kick base";
+  return `${what} · ${span}`;
+}
+
 /** Build the entire derived model from cabinets + settings. Pure. */
 export function compute(cabinets: Cabinet[], s: Settings): Model {
   const u = s.units;
@@ -99,44 +110,69 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
   let counts: HardwareCounts = { ...ZERO_COUNTS };
   const areaByStock = new Map<string, number>();
 
+  /**
+   * Funnel one part into every accumulator (piece count, banding, hardwood feet,
+   * sheet nesting, cut-list row). Shared by the per-cabinet pass and the
+   * run-level pass so a run frame / base nests + costs exactly like box parts.
+   */
+  const ingestPart = (p: Part, color: string, label: string): CutPart => {
+    pieces += p.qty;
+    bandLFInches += p.qty * bandingInchesPerPiece(p);
+    if (p.linear) {
+      frameLFInches += p.qty * p.length;
+    } else {
+      areaByStock.set(
+        p.stockId,
+        (areaByStock.get(p.stockId) || 0) + p.qty * p.length * p.width,
+      );
+      const arr = rectsByStock.get(p.stockId) || [];
+      for (let i = 0; i < p.qty; i++) {
+        arr.push({ w: p.length, h: p.width, color, label, part: p.name });
+      }
+      rectsByStock.set(p.stockId, arr);
+    }
+    const tag = p.linear
+      ? "hardwood"
+      : p.stockId !== s.roleStock.carcass
+        ? s.stocks[p.stockId].label
+        : "";
+    return {
+      name: p.name,
+      qty: p.qty,
+      qtyStr: "×" + p.qty,
+      lenStr: fmtLen(p.length, u),
+      widStr: fmtLen(p.width, u),
+      matTag: tag,
+      edgeStr: edgeStr(p),
+      part: p,
+    };
+  };
+
+  // Derive the runs once. When a continuous frame is on, each framed bay hands
+  // its face frame to the run pass and picks up its wider run opening.
+  const runs = runsOf(cabinets, s);
+  const frameCtx = new Map<string, FrameContext>();
+  if (s.continuousFaceFrame) {
+    for (const run of runs) {
+      if (!run.framed) continue;
+      for (const m of run.members)
+        frameCtx.set(m.cabinet.id, {
+          emitFaceFrame: false,
+          openingWidth: m.openingWidth,
+          sideDrop: Math.max(0, m.yB - m.frameBottom),
+          leftEnd: m.leftEnd,
+          rightEnd: m.rightEnd,
+        });
+    }
+  }
+
   cabinets.forEach((c, idx) => {
-    const cp = genParts(c, s);
+    const cp = genParts(c, s, frameCtx.get(c.id));
     cabinetParts.push(cp);
     const color = colorFor(idx);
     legend.push({ id: c.id, name: c.name, color });
 
-    const cutParts: CutPart[] = cp.parts.map((p) => {
-      pieces += p.qty;
-      bandLFInches += p.qty * bandingInchesPerPiece(p);
-      if (p.linear) {
-        frameLFInches += p.qty * p.length;
-      } else {
-        areaByStock.set(
-          p.stockId,
-          (areaByStock.get(p.stockId) || 0) + p.qty * p.length * p.width,
-        );
-        const arr = rectsByStock.get(p.stockId) || [];
-        for (let i = 0; i < p.qty; i++) {
-          arr.push({ w: p.length, h: p.width, color, label: c.name, part: p.name });
-        }
-        rectsByStock.set(p.stockId, arr);
-      }
-      const tag = p.linear
-        ? "hardwood"
-        : p.stockId !== s.roleStock.carcass
-          ? s.stocks[p.stockId].label
-          : "";
-      return {
-        name: p.name,
-        qty: p.qty,
-        qtyStr: "×" + p.qty,
-        lenStr: fmtLen(p.length, u),
-        widStr: fmtLen(p.width, u),
-        matTag: tag,
-        edgeStr: edgeStr(p),
-        part: p,
-      };
-    });
+    const cutParts: CutPart[] = cp.parts.map((p) => ingestPart(p, color, c.name));
 
     counts = addCounts(counts, countHardware(cp.parts, s.hardware));
 
@@ -149,6 +185,27 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
       parts: cutParts,
     });
     stepGroups.push(genSteps(cp, s, color));
+  });
+
+  // Run-level pass: the continuous face frame and the separate toe-kick base —
+  // parts that span a run, not a box — each as one synthetic cut group.
+  runs.forEach((run, ri) => {
+    const runParts: Part[] = [];
+    if (s.continuousFaceFrame && run.framed) runParts.push(...genRunFrameParts(run, s));
+    if (s.separateBase) runParts.push(...genBaseParts(run, s));
+    if (!runParts.length) return;
+    const color = colorFor(cabinets.length + ri);
+    const name = runGroupName(run, s);
+    const parts = mergeParts(runParts).map((p) => ingestPart(p, color, name));
+    cutGroups.push({
+      id: run.id,
+      name,
+      typeLabel: "Run",
+      color,
+      dims: `${fmtLen(run.x1 - run.x0, u)} run · ${run.members.length} ${run.members.length === 1 ? "bay" : "bays"}`,
+      parts,
+    });
+    legend.push({ id: run.id, name, color });
   });
 
   // Nest each sheet stock independently.

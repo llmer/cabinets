@@ -18,21 +18,30 @@ import { drawerStackBudget, getDrawerHeights } from "@/engine/drawers";
 const FRAME_BG = "#A9824F";
 const HANDLE = "rgba(31,20,14,.45)";
 
+/** Whether this cabinet sits at an exposed END of its run (for shared stiles). */
+export interface RunEnds {
+  leftEnd: boolean;
+  rightEnd: boolean;
+}
+
+const SOLO_ENDS: RunEnds = { leftEnd: true, rightEnd: true };
+
 export function renderFace(
   c: Cabinet,
   accent: string,
   ppi: number,
   tkPx: number,
   s: Settings,
+  ends: RunEnds = SOLO_ENDS,
 ): ReactNode {
-  if (c.frontStyle === "opening") return openingFace(c, ppi, tkPx, s);
+  if (c.frontStyle === "opening") return openingFace(c, ppi, tkPx, s, ends);
   if (isInset(c)) {
     // Side/top/bottom border: wide hardwood frame (framed) or thin box edge.
     // Between-face rail: a mid rail (framed / railed inset) or a thin reveal.
     const effFF = effectiveFrameWidth(c, s);
     const railFF = insetStackGap(c, s);
     const frameColor = isFramed(c) ? FRAME_BG : "#D8CCB2";
-    return insetFace(c, accent, ppi, tkPx, s, effFF, railFF, frameColor);
+    return insetFace(c, accent, ppi, tkPx, s, effFF, railFF, frameColor, ends);
   }
   // Full overlay — fronts sit proud, covering the box/frame (frame hidden).
   return framelessFace(c, accent, ppi, tkPx, s);
@@ -173,8 +182,13 @@ function insetFace(
   effFF: number,
   railFF: number,
   frameColor: string,
+  ends: RunEnds,
 ): ReactNode {
   const ffpx = Math.max(2.5, effFF * ppi); // side stiles + top/bottom border
+  // A shared joint shows half a stile (its neighbour supplies the other half),
+  // so a run of joined cabinets reads as one continuous frame.
+  const leftFfpx = ends.leftEnd ? ffpx : Math.max(1.5, ffpx / 2);
+  const rightFfpx = ends.rightEnd ? ffpx : Math.max(1.5, ffpx / 2);
   const railpx = Math.max(1, railFF * ppi); // rail/gap between stacked faces
   const rev = Math.max(0.8, 0.125 * ppi);
   const FRAME_BG = frameColor;
@@ -251,7 +265,7 @@ function insetFace(
         top: 0,
         bottom: 0,
         [side]: 0,
-        width: ffpx,
+        width: side === "left" ? leftFfpx : rightFfpx,
         background: FRAME_BG,
         [side === "left" ? "borderRight" : "borderLeft"]: "1px solid rgba(31,20,14,.25)",
       } as CSSProperties}
@@ -261,7 +275,7 @@ function insetFace(
     <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: tkPx }}>
       {stile("left")}
       {stile("right")}
-      <div style={{ position: "absolute", top: 0, bottom: 0, left: ffpx, right: ffpx, display: "flex", flexDirection: "column" }}>{col}</div>
+      <div style={{ position: "absolute", top: 0, bottom: 0, left: leftFfpx, right: rightFfpx, display: "flex", flexDirection: "column" }}>{col}</div>
     </div>
   );
 }
@@ -270,13 +284,15 @@ function insetFace(
 /* Appliance opening                                                   */
 /* ------------------------------------------------------------------ */
 
-function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings): ReactNode {
+function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings, ends: RunEnds): ReactNode {
   const framed = (c.construction || "frameless") === "framed";
   const ffpx = Math.max(2.5, (s.frameWidth || 1.5) * ppi);
+  const leftFfpx = ends.leftEnd ? ffpx : Math.max(1.5, ffpx / 2);
+  const rightFfpx = ends.rightEnd ? ffpx : Math.max(1.5, ffpx / 2);
   const kids: ReactNode[] = [];
   if (framed) {
-    kids.push(<div key="sl" style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: ffpx, background: FRAME_BG }} />);
-    kids.push(<div key="sr" style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: ffpx, background: FRAME_BG }} />);
+    kids.push(<div key="sl" style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: leftFfpx, background: FRAME_BG }} />);
+    kids.push(<div key="sr" style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: rightFfpx, background: FRAME_BG }} />);
     kids.push(<div key="tr" style={{ position: "absolute", top: 0, left: 0, right: 0, height: ffpx, background: FRAME_BG }} />);
   }
   const pad = framed ? ffpx : 5;

@@ -22,6 +22,7 @@ const ROLE_LABELS: Record<Role, string> = {
   drawerBox: "Drawer boxes",
   drawerBottom: "Drawer bottoms",
   faceFrame: "Face frames",
+  base: "Toe-kick base & fascia",
 };
 
 function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
@@ -124,6 +125,27 @@ export function SettingsView() {
             <input type="checkbox" checked={settings.allowRotate} onChange={(e) => updateSettings({ allowRotate: e.target.checked })} />
             Allow grain rotation when nesting
           </label>
+        </div>
+      </Card>
+
+      <Card title="Runs & toe-kick base" sub="how joined cabinets share a face frame and a base">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "center", marginBottom: 16 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.continuousFaceFrame} onChange={(e) => updateSettings({ continuousFaceFrame: e.target.checked })} />
+            Continuous face frame across each run
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.separateBase} onChange={(e) => updateSettings({ separateBase: e.target.checked })} />
+            Separate toe-kick base (ladder + fascia)
+          </label>
+        </div>
+        <div style={grid3}>
+          {dimField("faceFrameFloorGap", "Frame off floor", 0, 8)}
+          {dimField("toeKickSideRecess", "Toe-kick side recess", 0, 6)}
+        </div>
+        <div style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, marginTop: 10 }}>
+          A run = contiguous joined cabinets of the same height &amp; depth. Mark “start a new run” on a
+          cabinet in its editor to break one at a corner, an appliance gap, or a separate wall.
         </div>
       </Card>
 

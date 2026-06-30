@@ -13,8 +13,27 @@ import {
 } from "@/engine/geometry";
 import { getDrawerHeights } from "@/engine/drawers";
 import { drawerBoxSpecs } from "@/engine/parts";
+import { Run, RunMember, runsOf } from "@/engine/runs";
+import { BuildStage } from "@/engine/steps";
+import { BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
 
 type ViewPreset = "iso" | "front" | "top";
+
+/** A single neutral maple used for every front when per-cabinet tint is off. */
+const UNIFORM_FRONT = "#d9c19a";
+
+/** One cabinet rendered up to a given assembly step, for the build walkthrough. */
+interface BuildFocus {
+  cabinet: Cabinet;
+  /** The current step's stage — its parts glow. */
+  stage: BuildStage;
+  /** Every stage reached at or before the current step — its parts are solid. */
+  revealed: Set<BuildStage>;
+  accent: string;
+}
+
+/** How a build part is drawn relative to the current step's stage. */
+type PartMode = "built" | "current" | "ghost";
 
 interface Orbit {
   theta: number;
@@ -41,14 +60,23 @@ export class CabinetScene {
   private runDims = { maxX: 90, maxTop: 90, maxD: 24 };
 
   private edgeMat: THREE.LineBasicMaterial;
+  private edgeHi: THREE.LineBasicMaterial;
   private matCarcass: THREE.MeshStandardMaterial;
   private matCarcassIn: THREE.MeshStandardMaterial;
   private matHandle: THREE.MeshStandardMaterial;
+  private matGhost: THREE.MeshStandardMaterial;
+  private matHighlight: THREE.MeshStandardMaterial;
   private frontMats: Record<string, THREE.MeshStandardMaterial> = {};
 
   private cabinets: Cabinet[] = [];
   private settings!: Settings;
   private showFronts = true;
+  /** Tint each cabinet's fronts its own legend colour (off = one uniform wood). */
+  private tintCabinets = false;
+
+  /** When set, the scene renders this single cabinet staged for the build tab. */
+  private focus: BuildFocus | null = null;
+  private lastFocusId: string | null = null;
 
   private cleanupFns: Array<() => void> = [];
 
@@ -65,6 +93,11 @@ export class CabinetScene {
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.domElement.style.display = "block";
+    // setSize(..., false) leaves the canvas CSS size unset, so on a HiDPI screen
+    // (pixelRatio > 1) the element would lay out at its buffer size — twice the
+    // mount — and get clipped to a corner. Pin it to fill the mount instead.
+    r.domElement.style.width = "100%";
+    r.domElement.style.height = "100%";
     mount.appendChild(r.domElement);
 
     // lights
@@ -100,9 +133,26 @@ export class CabinetScene {
 
     // materials
     this.edgeMat = new THREE.LineBasicMaterial({ color: T.edge, transparent: true, opacity: 0.32 });
+    // Brighter edge for the part(s) added by the current build step.
+    this.edgeHi = new THREE.LineBasicMaterial({ color: 0x5a3310, transparent: true, opacity: 0.6 });
     this.matCarcass = new THREE.MeshStandardMaterial({ color: T.carcass, roughness: 0.82, metalness: 0.02 });
     this.matCarcassIn = new THREE.MeshStandardMaterial({ color: T.carcassInterior, roughness: 0.85 });
     this.matHandle = new THREE.MeshStandardMaterial({ color: T.handle, roughness: 0.5, metalness: 0.4 });
+    // Build walkthrough: faint "not yet" ghost + glowing "this step" highlight.
+    this.matGhost = new THREE.MeshStandardMaterial({
+      color: T.carcass,
+      transparent: true,
+      opacity: 0.12,
+      depthWrite: false,
+      roughness: 1,
+    });
+    this.matHighlight = new THREE.MeshStandardMaterial({
+      color: 0xe6a23c,
+      emissive: 0xc9802b,
+      emissiveIntensity: 0.55,
+      roughness: 0.45,
+      metalness: 0.05,
+    });
 
     this.orbit = { theta: 0.72, phi: 1.12, radius: 120, target: new THREE.Vector3() };
     this.group = new THREE.Group();
@@ -194,6 +244,35 @@ export class CabinetScene {
     return this.frontMats[accent];
   }
 
+  /**
+   * Draw a bay's two face-frame stiles. In a continuous run each shared joint is
+   * ONE box centred on the joint, owned by the LEFT bay (it overhangs a
+   * half-stile into the next bay, whose left stile is therefore not drawn). That
+   * makes the run frame one seamless piece — only the run ends get an end stile.
+   */
+  private addFrameStiles(
+    x0: number,
+    x1: number,
+    leftY0: number,
+    rightY0: number,
+    y1: number,
+    fz0: number,
+    fz1: number,
+    fm: THREE.Material,
+    ff: number,
+    leftEnd: boolean,
+    rightEnd: boolean,
+    continuous: boolean,
+  ) {
+    // Left stile: a full end stile at a run start; mid-run it's covered by the
+    // previous bay's joint stile, so skip it.
+    if (!continuous || leftEnd) this.addBox(x0, x0 + ff, leftY0, y1, fz0, fz1, fm);
+    // Right stile: one box centred on a shared joint, else a full end stile —
+    // dropped to whichever neighbouring bay reaches lower.
+    if (continuous && !rightEnd) this.addBox(x1 - ff / 2, x1 + ff / 2, rightY0, y1, fz0, fz1, fm);
+    else this.addBox(x1 - ff, x1, rightY0, y1, fz0, fz1, fm);
+  }
+
   private addBox(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, mat: THREE.Material) {
     const w = Math.abs(x1 - x0);
     const h = Math.abs(y1 - y0);
@@ -210,7 +289,7 @@ export class CabinetScene {
     this.group.add(e);
   }
 
-  private addCabinet3D(c: Cabinet, x0: number, idx: number) {
+  private addCabinet3D(c: Cabinet, x0: number, idx: number, ctx?: { run: Run; m: RunMember }) {
     const S = this.settings;
     const matT = carcassThickness(S);
     const backT = backThickness(S);
@@ -223,12 +302,31 @@ export class CabinetScene {
     const openBox = opening || desk;
     const yB = c.type === "wall" ? S.upperBottom : c.toeKick !== false && !openBox ? S.toeKick : 0;
     const yT = yB + boxH;
+    // Run context: one continuous frame across the joins (shared half-stiles,
+    // a bottom that drops to the toe kick) and a shared, side-recessed base.
+    const rm = ctx?.m;
+    const run = ctx?.run;
+    const continuous = !!run && run.framed && S.continuousFaceFrame && framed;
     const cd = openBox ? D : D - backT;
     const x1 = x0 + W;
     const carcass = this.matCarcass;
 
-    this.addBox(x0, x0 + matT, yB, yT, 0, cd, carcass);
-    this.addBox(x1 - matT, x1, yB, yT, 0, cd, carcass);
+    // Per-bay frame bottom: a toe-kicked bay stops at the toe-kick line, a
+    // floor-standing bay (appliance opening / desk) runs its frame to the floor.
+    // A shared joint stile takes the LOWER of the two bays it borders.
+    const bayFB = continuous && rm ? rm.frameBottom : yB;
+    const ri = run && rm ? run.members.indexOf(rm) : -1;
+    const nextFB = ri >= 0 && run && run.members[ri + 1] ? run.members[ri + 1].frameBottom : bayFB;
+    const leftStileBot = bayFB;
+    const rightStileBot = continuous && rm && !rm.rightEnd ? Math.min(bayFB, nextFB) : bayFB;
+
+    // An exposed end of a face-frame run drops its end panel to the frame
+    // bottom, so from the side the panel lines up with the face frame.
+    const sideDrop = continuous ? Math.max(0, yB - bayFB) : 0;
+    const leftBot = sideDrop > 0 && rm?.leftEnd ? yB - sideDrop : yB;
+    const rightBot = sideDrop > 0 && rm?.rightEnd ? yB - sideDrop : yB;
+    this.addBox(x0, x0 + matT, leftBot, yT, 0, cd, carcass);
+    this.addBox(x1 - matT, x1, rightBot, yT, 0, cd, carcass);
     if (!openBox) this.addBox(x0 + matT, x1 - matT, yB, yB + matT, 0, cd, carcass);
     if (c.type === "base") {
       this.addBox(x0 + matT, x1 - matT, yT - matT, yT, 0, 4, carcass);
@@ -239,14 +337,22 @@ export class CabinetScene {
     // Back sits between the sides (not full width) so it doesn't share faces
     // with the side panels — eliminates corner z-fighting.
     if (!openBox) this.addBox(x0 + matT, x1 - matT, yB, yT, 0, backT, carcass);
-    // Recessed toe-kick plinth, set back from the FRONT (was a stray board at the back).
+    // Toe-kick base: recessed from the FRONT, and (with a separate base) set in
+    // on the exposed END sides of the run too — the box-on-a-base look.
     if (c.type !== "wall" && c.toeKick !== false && !openBox && yB > 0) {
-      this.addBox(x0, x1, 0, yB, 0, Math.max(matT, D - S.toeKickDepth), carcass);
+      const lr = S.separateBase && rm?.leftEnd ? S.toeKickSideRecess : 0;
+      const rr = S.separateBase && rm?.rightEnd ? S.toeKickSideRecess : 0;
+      this.addBox(x0 + lr, x1 - rr, 0, yB, 0, Math.max(matT, D - S.toeKickDepth), carcass);
     }
 
-    const fm = this.frontMat(colorFor(idx));
+    const fm = this.frontMat(this.tintCabinets ? colorFor(idx) : UNIFORM_FRONT);
     const fz0 = D - 0.75;
     const fz1 = D;
+    // The applied face frame sits a hair PROUD of the carcass and laps slightly
+    // behind it, so no frame face is ever coplanar with a carcass face — kills
+    // the z-fighting where a stile/rail overlaps a side panel or top stretcher.
+    const ffz0 = fz0 - 0.1;
+    const ffz1 = fz1 + 0.06;
     const gap = 0.125;
 
     // Fronts hidden: reveal the interior — adjustable shelves + drawer boxes.
@@ -265,9 +371,10 @@ export class CabinetScene {
     if (opening) {
       if (framed) {
         const ff = S.frameWidth || 1.5;
-        this.addBox(x0, x0 + ff, yB, yT, fz0, fz1, fm);
-        this.addBox(x1 - ff, x1, yB, yT, fz0, fz1, fm);
-        this.addBox(x0 + ff, x1 - ff, yT - ff, yT, fz0, fz1, fm);
+        const ffL = continuous && rm ? (rm.leftEnd ? ff : ff / 2) : ff;
+        const ffR = continuous && rm ? (rm.rightEnd ? ff : ff / 2) : ff;
+        this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
+        this.addBox(x0 + ffL, x1 - ffR, yT - ff, yT, ffz0, ffz1, fm);
       }
       return;
     }
@@ -290,20 +397,26 @@ export class CabinetScene {
       const railGap = insetStackGap(c, S); // mid rail (framed/railed) or reveal
       const hasRails = framed || isRailInset(c);
       const railMat = framed ? fm : this.matCarcass;
-      const rl = x0 + ff;
-      const rr = x1 - ff;
+      // Shared half-stiles at the joins; each drops to its bay's frame bottom.
+      const ffL = continuous && rm ? (rm.leftEnd ? ff : ff / 2) : ff;
+      const ffR = continuous && rm ? (rm.rightEnd ? ff : ff / 2) : ff;
+      const rl = x0 + ffL;
+      const rr = x1 - ffR;
       if (framed) {
-        // visible hardwood frame perimeter
-        this.addBox(x0, x0 + ff, yB, yT, fz0, fz1, fm);
-        this.addBox(x1 - ff, x1, yB, yT, fz0, fz1, fm);
-        this.addBox(rl, rr, yT - ff, yT, fz0, fz1, fm);
-        if (!desk) this.addBox(rl, rr, yB, yB + ff, fz0, fz1, fm);
+        // visible hardwood frame perimeter (one continuous frame across the run:
+        // shared joint stiles are single seamless boxes, owned by the left bay),
+        // sat proud of the carcass (ffz*) so the overlap never z-fights.
+        this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
+        this.addBox(rl, rr, yT - ff, yT, ffz0, ffz1, fm);
+        // Bottom rail spans from the lower of (this bay's frame bottom, box
+        // bottom) up to the opening — so a floor bay's rail seats at its box.
+        if (!desk) this.addBox(rl, rr, Math.min(bayFB, yB), yB + ff, ffz0, ffz1, fm);
       }
       // Inset fronts sit flush with the frame / box face, a hair proud-recessed.
       const iz0 = fz0;
       const iz1 = fz1 - 0.06;
-      const ol = x0 + ff + gap;
-      const or = x1 - ff - gap;
+      const ol = x0 + ffL + gap;
+      const or = x1 - ffR - gap;
       const drawRail = (yA: number, yB2: number) => {
         if (hasRails) this.addBox(rl, rr, yA, yB2, iz0, iz1, railMat);
       };
@@ -424,15 +537,25 @@ export class CabinetScene {
     this.group = new THREE.Group();
     this.scene.add(this.group);
 
+    if (this.focus) {
+      this.renderBuild(this.focus);
+      return;
+    }
+
     const cabs = this.cabinets;
+    // Derive runs so the continuous frame + shared toe-kick base render once,
+    // shared across the joins — the same grouping the cut list uses.
+    const ctx = new Map<string, { run: Run; m: RunMember }>();
+    for (const run of runsOf(cabs, this.settings))
+      for (const m of run.members) ctx.set(m.cabinet.id, { run, m });
     let bx = 0;
     cabs.filter((c) => c.type !== "wall").forEach((c) => {
-      this.addCabinet3D(c, bx, cabs.indexOf(c));
+      this.addCabinet3D(c, bx, cabs.indexOf(c), ctx.get(c.id));
       bx += c.width;
     });
     let wx = 0;
     cabs.filter((c) => c.type === "wall").forEach((c) => {
-      this.addCabinet3D(c, wx, cabs.indexOf(c));
+      this.addCabinet3D(c, wx, cabs.indexOf(c), ctx.get(c.id));
       wx += c.width;
     });
     const maxX = Math.max(bx, wx, 30);
@@ -449,11 +572,114 @@ export class CabinetScene {
     }
   }
 
-  setData(cabinets: Cabinet[], settings: Settings, showFronts: boolean) {
+  setData(cabinets: Cabinet[], settings: Settings, showFronts: boolean, tintCabinets = false) {
+    this.focus = null;
     this.cabinets = cabinets;
     this.settings = settings;
     this.showFronts = showFronts;
+    this.tintCabinets = tintCabinets;
     this.rebuild();
+  }
+
+  /**
+   * Render ONE cabinet built up to `stage` for the build-tab walkthrough:
+   * earlier stages solid, this stage glowing, later stages ghosted. `showFronts`
+   * false flips to a cutaway that reveals the drawer boxes / shelves inside.
+   */
+  setBuildFocus(
+    cabinet: Cabinet,
+    settings: Settings,
+    stage: BuildStage,
+    revealedStages: BuildStage[],
+    accent: string,
+    showFronts: boolean,
+  ) {
+    this.settings = settings;
+    this.showFronts = showFronts;
+    this.focus = { cabinet, stage, revealed: new Set(revealedStages), accent };
+    this.rebuild();
+  }
+
+  /** Build the staged geometry for the focused cabinet. */
+  private renderBuild(f: BuildFocus) {
+    const parts = cabinetBuildParts(f.cabinet, this.settings);
+    for (const p of parts) {
+      // Cutaway gate: fronts hide the interior, so show one or the other.
+      if (this.showFronts) {
+        if (p.kind === "shelf" || p.kind === "drawerBox") continue;
+      } else if (p.kind === "front" || p.kind === "handle") {
+        continue;
+      }
+      // The current step's stage glows; stages already reached are solid; stages
+      // still ahead are ghosted. Driven by the real step order (handles e.g. an
+      // appliance surround whose face frame precedes "stand it in place").
+      const mode: PartMode =
+        p.stage === f.stage ? "current" : f.revealed.has(p.stage) ? "built" : "ghost";
+      this.addBuildPart(p, mode, f.accent);
+    }
+
+    // Frame the lone cabinet; only refit when switching to a different box so
+    // stepping through stages keeps a steady viewpoint.
+    if (this.lastFocusId !== f.cabinet.id) {
+      this.focusFit(f.cabinet);
+      this.lastFocusId = f.cabinet.id;
+    }
+  }
+
+  /** Center and frame a single focused cabinet for the build walkthrough. */
+  private focusFit(c: Cabinet) {
+    const top =
+      buildBaseY(c, this.settings) +
+      boxHeight(c, this.settings) +
+      (c.frontStyle === "desk" ? carcassThickness(this.settings) : 0);
+    this.orbit.target.set(c.width / 2, top / 2, c.depth / 2);
+    // Fit the box's bounding sphere to the (vertical) FOV, with breathing room.
+    this.orbit.radius = Math.hypot(c.width, top, c.depth) * 1.35;
+  }
+
+  private materialForKind(kind: BuildPartKind, accent: string): THREE.Material {
+    switch (kind) {
+      case "front":
+      case "frame":
+        return this.frontMat(accent);
+      case "handle":
+        return this.matHandle;
+      case "shelf":
+      case "drawerBox":
+        return this.matCarcassIn;
+      default:
+        return this.matCarcass; // carcass / back / toeKick
+    }
+  }
+
+  private addBuildPart(p: BuildPart, mode: PartMode, accent: string) {
+    const [x0, x1, y0, y1, z0, z1] = p.box;
+    const w = Math.abs(x1 - x0);
+    const h = Math.abs(y1 - y0);
+    const d = Math.abs(z1 - z0);
+    if (w < 0.01 || h < 0.01 || d < 0.01) return;
+    const mat =
+      mode === "current"
+        ? this.matHighlight
+        : mode === "ghost"
+          ? this.matGhost
+          : this.materialForKind(p.kind, accent);
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const m = new THREE.Mesh(geo, mat);
+    if (mode !== "ghost") {
+      m.castShadow = true;
+      m.receiveShadow = true;
+    }
+    m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    this.group.add(m);
+    if (mode !== "ghost") {
+      const e = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        mode === "current" ? this.edgeHi : this.edgeMat,
+      );
+      e.position.copy(m.position);
+      this.group.add(e);
+    }
   }
 
   fitView() {
@@ -477,7 +703,8 @@ export class CabinetScene {
   }
 
   resetView() {
-    this.fitView();
+    if (this.focus) this.focusFit(this.focus.cabinet);
+    else this.fitView();
     this.setView("iso");
   }
 

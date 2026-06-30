@@ -42,9 +42,13 @@ describe("compute — full model on the seed kitchen", () => {
 
   it("summarizes counts", () => {
     expect(m.summary.count).toBe(6);
-    expect(m.cutGroups).toHaveLength(6);
+    // 6 cabinets + 2 run-level toe-kick base groups (the contiguous base run
+    // B1–B3, and the tall T1 on its own). Walls carry no toe kick → no group.
+    // The build walkthrough stays per-cabinet, so stepGroups holds at 6.
+    expect(m.cutGroups).toHaveLength(8);
     expect(m.stepGroups).toHaveLength(6);
-    expect(m.legend).toHaveLength(6);
+    expect(m.legend).toHaveLength(8);
+    expect(m.cutGroups.filter((g) => g.typeLabel === "Run")).toHaveLength(2);
   });
 
   it("nests without oversize parts and gives a sane yield", () => {
@@ -72,10 +76,12 @@ describe("compute — full model on the seed kitchen", () => {
       placed += p.sheets.reduce((a, s) => a + s.placements.length, 0);
       placed += p.oversize.length;
     }
-    const sheetPieces = m.cabinetParts
-      .flatMap((cp) => cp.parts)
-      .filter((p) => !p.linear)
-      .reduce((a, p) => a + p.qty, 0);
+    // Count from the cut groups so run-level parts (the toe-kick base) are
+    // included alongside the per-cabinet parts — both flow through nesting.
+    const sheetPieces = m.cutGroups
+      .flatMap((g) => g.parts)
+      .filter((cp) => !cp.part.linear)
+      .reduce((a, cp) => a + cp.qty, 0);
     expect(placed).toBe(sheetPieces);
   });
 });

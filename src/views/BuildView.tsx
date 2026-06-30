@@ -1,13 +1,34 @@
-import { CSSProperties, useEffect, useMemo } from "react";
+import { CSSProperties, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { color, font } from "@/theme";
-import { Settings, Units } from "@/domain/types";
+import { Cabinet, Settings, Units } from "@/domain/types";
 import { constructionInfo } from "@/engine/labels";
 import { drawerBoxSpecs } from "@/engine/parts";
 import { fmtLen } from "@/engine/units";
-import { Step, StepGroup } from "@/engine/steps";
+import { BuildStage, Step, StepGroup } from "@/engine/steps";
 import { useModel } from "@/state/useModel";
 import { stepKey, useStore } from "@/state/store";
 import { Button, MonoLabel, Serif, Swatch, Toggle } from "@/components/ui";
+
+// Three.js is heavy — load the per-step 3D render lazily (its own chunk) so it
+// stays out of the initial bundle, exactly like the standalone 3D tab.
+const BuildStepScene = lazy(() =>
+  import("@/views/BuildStepScene").then((m) => ({ default: m.BuildStepScene })),
+);
+
+/** Short, human label for each assembly stage (shown in the 3D legend). */
+const STAGE_LABEL: Record<BuildStage, string> = {
+  sides: "Side panels",
+  carcass: "Carcass",
+  back: "Back",
+  desktop: "Desktop",
+  base: "Toe kick / set",
+  faceFrame: "Face frame",
+  drawers: "Drawer boxes",
+  shelves: "Shelves",
+  doors: "Doors",
+  drawerFronts: "Drawer fronts",
+  pulls: "Pulls & knobs",
+};
 
 type DrawerSpec = ReturnType<typeof drawerBoxSpecs>[number];
 
@@ -25,6 +46,8 @@ interface FlatStep {
   groupCount: number;
   specs: DrawerSpec[];
   framed: boolean;
+  /** The source cabinet, for the per-step 3D render (absent if it went away). */
+  cabinet?: Cabinet;
 }
 
 export function BuildView() {
@@ -52,6 +75,7 @@ export function BuildView() {
       const cp = cabinetParts.find((c) => c.cabinet.id === sg.id);
       const specs = cp ? drawerBoxSpecs(cp.cabinet, settings) : [];
       const framed = cp?.geometry.framed ?? false;
+      const cabinet = cp?.cabinet;
       sg.steps.forEach((step, idxInGroup) => {
         out.push({
           gi,
@@ -66,6 +90,7 @@ export function BuildView() {
           groupCount: sg.steps.length,
           specs,
           framed,
+          cabinet,
         });
       });
     });
@@ -322,6 +347,12 @@ function GuidedWalkthrough({
   const cur = flat[cursor];
   const done = !!buildDone[cur.key];
 
+  // 3D render preference + a mount gate so server-side rendering (the smoke
+  // test) never instantiates Three.js / a WebGL canvas.
+  const [show3d, setShow3d] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const goPrev = () => setBuildCursor(Math.max(0, cursor - 1));
   const goNext = () => setBuildCursor(Math.min(total - 1, cursor + 1));
   const completeAndNext = () => {
@@ -397,7 +428,9 @@ function GuidedWalkthrough({
         })}
       </div>
 
-      {/* The focused step card */}
+      {/* The focused step card. Fixed height + a flex-filling 3D keep the control
+          bar pinned at the bottom, so it never moves as the step text / table
+          change between steps. */}
       <div
         style={{
           border: `1px solid ${color.border}`,
@@ -405,19 +438,39 @@ function GuidedWalkthrough({
           borderRadius: 10,
           background: color.panel,
           overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          ...(show3d && mounted ? { height: "clamp(500px, 66vh, 640px)" } : {}),
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 22px", background: color.panelAlt, borderBottom: `1px solid ${color.border}`, flexWrap: "wrap" }}>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 10, padding: "13px 22px", background: color.panelAlt, borderBottom: `1px solid ${color.border}`, flexWrap: "wrap" }}>
           <Swatch c={cur.color} />
           <span style={{ fontFamily: font.mono, fontSize: 13, fontWeight: 600, letterSpacing: "0.06em" }}>{cur.groupName}</span>
           <span style={{ fontFamily: font.mono, fontSize: 12, color: color.faint }}>{cur.typeLabel} · {cur.dims}</span>
-          <span style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 11, color: color.faint }}>
-            Step {groupStepNo} of {cur.groupCount} · {cursor + 1}/{total} overall
+          <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+            <button
+              onClick={() => setShow3d((v) => !v)}
+              style={{
+                border: `1px solid ${color.border}`,
+                borderRadius: 5,
+                background: show3d ? color.inkStrong : color.panel,
+                color: show3d ? color.onDark : color.inkStrong,
+                padding: "5px 10px",
+                fontFamily: font.mono,
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              {show3d ? "Hide 3D" : "Show 3D"}
+            </button>
+            <span style={{ fontFamily: font.mono, fontSize: 11, color: color.faint }}>
+              Step {groupStepNo} of {cur.groupCount} · {cursor + 1}/{total} overall
+            </span>
           </span>
         </div>
 
-        <div style={{ padding: "26px 24px 8px" }}>
-          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", padding: "22px 24px 4px" }}>
+          <div style={{ flexShrink: 0, display: "flex", gap: 16, alignItems: "flex-start" }}>
             <div
               style={{
                 flex: "none",
@@ -439,13 +492,44 @@ function GuidedWalkthrough({
             <div style={{ fontSize: 20, lineHeight: 1.5, color: color.ink, paddingTop: 4 }}>{cur.step.t}</div>
           </div>
 
-          {cur.step.kind === "drawerBoxes" && cur.specs.length > 0 && (
-            <DrawerTable specs={cur.specs} settings={settings} framed={cur.framed} u={u} />
+          {show3d && mounted && cur.cabinet && (
+            <Suspense
+              fallback={
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    marginTop: 16,
+                    border: `1px solid ${color.border}`,
+                    borderRadius: 8,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontFamily: font.serif,
+                    fontStyle: "italic",
+                    color: color.faint,
+                  }}
+                >
+                  Loading 3D…
+                </div>
+              }
+            >
+              <BuildStepScene
+                cabinet={cur.cabinet}
+                settings={settings}
+                stage={cur.step.stage}
+                revealedStages={flat
+                  .filter((f) => f.gi === cur.gi && f.idxInGroup <= cur.idxInGroup)
+                  .map((f) => f.step.stage)}
+                accent={cur.color}
+                stageLabel={STAGE_LABEL[cur.step.stage]}
+              />
+            </Suspense>
           )}
         </div>
 
-        {/* Controls */}
-        <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "16px 24px 20px", flexWrap: "wrap" }}>
+        {/* Controls — pinned at the bottom of the fixed-height card */}
+        <div style={{ flexShrink: 0, borderTop: `1px solid ${color.rule}`, display: "flex", gap: 10, alignItems: "center", padding: "14px 24px", flexWrap: "wrap" }}>
           <Button variant="mono" onClick={goPrev} disabled={cursor === 0} style={{ opacity: cursor === 0 ? 0.45 : 1 }}>
             ← Back
           </Button>
@@ -462,6 +546,12 @@ function GuidedWalkthrough({
           </Button>
         </div>
       </div>
+
+      {/* Drawer-size reference lives below the card, so it never shifts the
+          controls when it appears on the "cut the box parts" step. */}
+      {cur.step.kind === "drawerBoxes" && cur.specs.length > 0 && (
+        <DrawerTable specs={cur.specs} settings={settings} framed={cur.framed} u={u} />
+      )}
 
       <div style={{ fontFamily: font.mono, fontSize: 11, color: color.fainter, marginTop: 12, textAlign: "center" }}>
         ← / → to move · Enter or Space to mark done &amp; advance
@@ -600,11 +690,9 @@ function DrawerTable({
         </tbody>
       </table>
       <div style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, marginTop: 6, lineHeight: 1.5 }}>
-        Groove the 1/4&quot; bottom 1/4&quot; up from the bottom edge of all four box parts; glue + pin the sides to the
-        front &amp; back, slide the bottom in (no glue), check square, then mount on the slides.
         {framed
-          ? " The box is sized to the face-frame opening — bridge the side-mount slides out to the carcass with rear sockets or ~1\" spacers."
-          : " The box is 1\" narrower than the opening for the slides."}
+          ? "Each box is sized to the face-frame opening — bridge the side-mount slides out to the carcass with rear sockets or ~1\" spacers."
+          : "Each box is 1\" narrower than its opening to clear the side-mount slides."}
       </div>
     </div>
   );

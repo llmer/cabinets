@@ -44,6 +44,8 @@ interface AppState {
   selectedId: string | null;
   dragId: string | null;
   showFronts: boolean;
+  /** 3D only: tint each cabinet's fronts its legend colour (off = uniform wood). */
+  tintCabinets: boolean;
   /** Free-form text drafts for number fields (committed on blur/Enter). */
   drafts: Record<string, string>;
   past: Project[];
@@ -70,6 +72,7 @@ interface AppState {
   beginDrag: (id: string) => void;
   endDrag: () => void;
   setShowFronts: (v: boolean) => void;
+  setTintCabinets: (v: boolean) => void;
   setDraft: (key: string, value: string) => void;
   clearDraft: (key: string) => void;
   setToast: (msg: string | null) => void;
@@ -103,6 +106,7 @@ interface AppState {
   setDrawerHeightAt: (id: string, i: number, value: number) => void;
   setConstructionAll: (mode: Construction) => void;
   setOverlayAll: (mode: Overlay) => void;
+  setRunBreak: (id: string, on: boolean) => void;
 
   /* settings mutations */
   updateSettings: (patch: Partial<Settings>) => void;
@@ -166,6 +170,7 @@ export const useStore = create<AppState>((set, get) => {
     selectedId: null,
     dragId: null,
     showFronts: true,
+    tintCabinets: false,
     drafts: {},
     past: [],
     future: [],
@@ -198,6 +203,7 @@ export const useStore = create<AppState>((set, get) => {
     },
     endDrag: () => set({ dragId: null }),
     setShowFronts: (v) => set({ showFronts: v }),
+    setTintCabinets: (v) => set({ tintCabinets: v }),
     setDraft: (key, value) =>
       set((s) => ({ drafts: { ...s.drafts, [key]: value } })),
     clearDraft: (key) =>
@@ -381,6 +387,9 @@ export const useStore = create<AppState>((set, get) => {
         drawerHeights: withDrawerHeight(sel, get().project.settings, i, value),
       });
     },
+
+    setRunBreak: (id, on) =>
+      patchCab(id, on ? { runBreak: true } : { runBreak: undefined }),
 
     setConstructionAll: (mode) =>
       withCabinets((cabs) =>

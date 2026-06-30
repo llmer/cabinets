@@ -71,6 +71,9 @@ export const DEFAULT_ROLE_STOCK: Record<Role, StockId> = {
   drawerBox: "ply12",
   drawerBottom: "ply14",
   faceFrame: "hardwood",
+  // Toe-kick base ladder + fascia: 3/4" ply, so it nests into sheets and is
+  // priced per sheet (not the by-the-foot hardwood line).
+  base: "ply34",
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -78,6 +81,10 @@ export const DEFAULT_SETTINGS: Settings = {
   reveal: 0.125,
   toeKick: 4.5,
   toeKickDepth: 3,
+  toeKickSideRecess: 2,
+  continuousFaceFrame: true,
+  separateBase: true,
+  faceFrameFloorGap: 3.25,
   upperBottom: 54,
   counterH: 36,
   kerf: 0.125,

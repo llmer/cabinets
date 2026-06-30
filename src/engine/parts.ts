@@ -19,13 +19,38 @@ import { r3 } from "./units";
 type Edge = "none" | "all" | number;
 
 /**
+ * How this cabinet's bay sits in a continuous run frame.
+ * - `emitFaceFrame: false` — the run-level pass owns the frame, so skip the
+ *   per-cabinet stiles/rails here (the box parts and fronts still emit).
+ * - `openingWidth` — the bay's actual inset opening in the run frame
+ *   (shared-stile aware). Wider than `W - 2·frameWidth` at every joint, so the
+ *   inset fronts size up to the correct reveal.
+ */
+export interface FrameContext {
+  emitFaceFrame: boolean;
+  openingWidth?: number;
+  /**
+   * Inches the EXPOSED end side panel drops below the box bottom to meet the
+   * face-frame bottom — so a finished end reads flush with the frame from the
+   * side. 0 (or no exposed end) leaves both sides at box height.
+   */
+  sideDrop?: number;
+  leftEnd?: boolean;
+  rightEnd?: boolean;
+}
+
+const SOLO_FRAME: FrameContext = { emitFaceFrame: true };
+
+/**
  * Generate the full cut list for one cabinet.
  *
  * Carcass / front geometry is ported verbatim from the imported design's
  * `genParts`. Drawer-box parts are an addition (the original listed only the
- * fronts), guarded by `settings.includeDrawerBoxes`.
+ * fronts), guarded by `settings.includeDrawerBoxes`. When the cabinet is part
+ * of a continuous run frame, `frame` redirects the face frame to the run pass
+ * and widens the inset openings at shared joints.
  */
-export function genParts(c: Cabinet, s: Settings): CabinetParts {
+export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRAME): CabinetParts {
   const t = carcassThickness(s);
   const bt = backThickness(s);
   const rev = s.reveal;
@@ -63,7 +88,18 @@ export function genParts(c: Cabinet, s: Settings): CabinetParts {
   };
 
   /* ---------- carcass ---------- */
-  add("Side panel", 2, boxH, cd, "carcass", boxH);
+  // On an exposed end of a face-frame run, the end panel drops past the box
+  // bottom to the frame line so the side profile matches the frame height.
+  const drop = frame.sideDrop ?? 0;
+  const exposedEnds = drop > 0 ? (frame.leftEnd ? 1 : 0) + (frame.rightEnd ? 1 : 0) : 0;
+  if (exposedEnds > 0) {
+    const interior = 2 - exposedEnds;
+    if (interior > 0) add("Side panel", interior, boxH, cd, "carcass", boxH);
+    const endH = r3(boxH + drop);
+    add("End panel", exposedEnds, endH, cd, "carcass", endH);
+  } else {
+    add("Side panel", 2, boxH, cd, "carcass", boxH);
+  }
   if (openBox) {
     if (c.type === "base") add("Top stretcher", 2, interiorW, 4, "carcass", "none");
     else add("Top", 1, interiorW, cd, "carcass", interiorW);
@@ -81,14 +117,14 @@ export function genParts(c: Cabinet, s: Settings): CabinetParts {
 
   if (c.frontStyle === "opening") {
     // APPLIANCE OPENING: no front. In framed mode, surround the bay.
-    if (framed) {
+    if (framed && frame.emitFaceFrame) {
       add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
       add("Face-frame top rail", 1, r3(W - 2 * ff), ff, "faceFrame", "none");
     }
   } else {
     // FACE-FRAME stock — solid hardwood (not nested). Mid rails only divide
     // inset openings; full-overlay fronts span a single opening.
-    if (framed) {
+    if (framed && frame.emitFaceFrame) {
       const railLen = r3(W - 2 * ff);
       add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
       add("Face-frame top rail", 1, railLen, ff, "faceFrame", "none");
@@ -124,7 +160,12 @@ export function genParts(c: Cabinet, s: Settings): CabinetParts {
       const insR = rev;
       const effFF = effectiveFrameWidth(c, s); // frame stile (framed) or box edge (frameless)
       const gap = insetStackGap(c, s); // mid rail (framed) or reveal (frameless)
-      const openW = r3(W - 2 * effFF);
+      // In a continuous run frame, this bay's opening is wider at shared joints
+      // (a half-stile, not a full one), so the fronts size up to it.
+      const openW =
+        framed && frame.openingWidth != null
+          ? r3(frame.openingWidth)
+          : r3(W - 2 * effFF);
       const frontW = r3(openW - 2 * insR);
       const doorW = (nd: number) => r3((openW - insR * (nd + 1)) / nd);
       if (c.frontStyle === "desk" || c.frontStyle === "drawers") {

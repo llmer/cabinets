@@ -10,6 +10,8 @@ export function ThreeView() {
   const settings = useStore((s) => s.project.settings);
   const showFronts = useStore((s) => s.showFronts);
   const setShowFronts = useStore((s) => s.setShowFronts);
+  const tintCabinets = useStore((s) => s.tintCabinets);
+  const setTintCabinets = useStore((s) => s.setTintCabinets);
   const setConstructionAll = useStore((s) => s.setConstructionAll);
   const setOverlayAll = useStore((s) => s.setOverlayAll);
   const ci = constructionInfo(cabinets);
@@ -37,8 +39,8 @@ export function ThreeView() {
 
   // push data on change
   useEffect(() => {
-    sceneRef.current?.setData(cabinets, settings, showFronts);
-  }, [cabinets, settings, showFronts]);
+    sceneRef.current?.setData(cabinets, settings, showFronts, tintCabinets);
+  }, [cabinets, settings, showFronts, tintCabinets]);
 
   const viewBtn: React.CSSProperties = {
     border: "none",
@@ -65,6 +67,13 @@ export function ThreeView() {
             onClick={() => setShowFronts(!showFronts)}
           >
             {showFronts ? "Hide fronts" : "Show fronts"}
+          </Button>
+          <Button
+            variant="mono"
+            style={{ background: tintCabinets ? color.inkStrong : "transparent", color: tintCabinets ? color.onDark : color.inkStrong }}
+            onClick={() => setTintCabinets(!tintCabinets)}
+          >
+            {tintCabinets ? "Tint: per cabinet" : "Tint: uniform"}
           </Button>
           <div style={{ display: "flex", border: `1px solid ${color.border}`, borderRadius: 5, overflow: "hidden" }}>
             <button style={viewBtn} onClick={() => sceneRef.current?.setView("iso")}>Iso</button>
