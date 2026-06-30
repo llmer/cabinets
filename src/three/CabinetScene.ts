@@ -411,7 +411,7 @@ export class CabinetScene {
         this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
         this.addBox(rl, rr, yT - ftop, yT, ffz0, ffz1, fm);
         // Bottom rail spans from the lower of (this bay's frame bottom, box
-        // bottom) up to the opening — so a floor bay's rail seats at its box.
+        // bottom) up to the opening — a desk has no bottom rail (open knee).
         if (!desk) this.addBox(rl, rr, Math.min(bayFB, yB), yB + ff, ffz0, ffz1, fm);
       }
       // Inset fronts sit flush with the frame / box face, a hair proud-recessed.
@@ -442,6 +442,12 @@ export class CabinetScene {
             y -= railGap;
           }
         });
+        // A framed desk gets a rail under the drawer + a deck panel that closes
+        // the drawer cavity off from the open knee below.
+        if (desk && framed) {
+          drawRail(y - railGap, y);
+          this.addBox(x0 + matT, x1 - matT, y - matT, y, 0, cd, carcass);
+        }
         if (c.frontStyle === "door_drawer") {
           drawRail(y - railGap, y);
           y -= railGap;

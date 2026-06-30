@@ -105,13 +105,17 @@ describe("genRunFrameParts — continuous frame", () => {
     expect(run.frameTop).toBe(34.5);
   });
 
-  it("gives the toe-kicked bay a taller bottom rail, none to the open bays", () => {
+  it("gives the toe-kicked bay a taller bottom rail; the open bays none", () => {
     const parts = genRunFrameParts(run, S);
     const bottoms = parts.filter((p) => p.name === "Face-frame bottom rail");
-    // only B1 is a closed cabinet → exactly one bottom rail
+    // only B1 is a closed cabinet → one bottom rail; B2 (opening) and B3 (desk)
+    // stay open at the floor
     expect(bottoms).toHaveLength(1);
     expect(bottoms[0].length).toBe(27.75); // B1 opening
     expect(bottoms[0].width).toBe(2.75); // yB 4.5 + ff 1.5 − frameBottom 3.25
+    // the desk still gets a rail UNDER its drawer (1 drawer → 1 mid rail)
+    const deskMid = parts.filter((p) => p.name === "Face-frame mid rail" && p.length === 21.75);
+    expect(deskMid).toHaveLength(1);
   });
 });
 

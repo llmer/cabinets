@@ -194,13 +194,16 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
     const railLen = c.width - 2 * ffw;
     const ffStiles = 2;
     const midRails = g.inset
-      ? c.frontStyle === "drawers" || c.frontStyle === "desk"
+      ? c.frontStyle === "drawers"
         ? Math.max(0, c.drawerCount - 1)
-        : c.frontStyle === "door_drawer"
-          ? 1
-          : 0
+        : c.frontStyle === "desk"
+          ? c.drawerCount
+          : c.frontStyle === "door_drawer"
+            ? 1
+            : 0
       : 0;
-    const ffRails = 1 /* top */ + (g.openBox ? 0 : 1) /* bottom */ + midRails;
+    // top + bottom (none on a desk — open knee) + the mid rails
+    const ffRails = 1 + (g.openBox ? 0 : 1) + midRails;
     const ffl = Math.ceil((ffStiles * g.boxHeight + ffRails * railLen) / 12);
     push(
       `Cut ~${ffl} ft of 1 1/2" × 3/4" hardwood into ${ffStiles} stile${ffStiles > 1 ? "s" : ""} and ${ffRails} rail${ffRails > 1 ? "s" : ""}, each sized to the front of the box.`,

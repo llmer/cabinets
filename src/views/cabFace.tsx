@@ -259,6 +259,7 @@ function insetFace(
     if (i > 0) col.push(railMid("r" + i));
     col.push(m);
   });
+  // A desk has no bottom rail — its knee is open to the floor.
   if (fs !== "desk") col.push(railEnd("bot"));
   const stile = (side: "left" | "right") => (
     <div

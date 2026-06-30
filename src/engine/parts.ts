@@ -105,6 +105,10 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
   if (openBox) {
     if (c.type === "base") add("Top stretcher", 2, interiorW, 4, "carcass", "none");
     else add("Top", 1, interiorW, cd, "carcass", interiorW);
+    // A framed desk closes its drawer cavity with a horizontal deck panel under
+    // the drawer; the open knee remains below it.
+    if (c.frontStyle === "desk" && framed)
+      add("Drawer deck", 1, interiorW, cd, "carcass", interiorW);
   } else {
     add("Bottom", 1, interiorW, cd, "carcass", interiorW);
     if (c.type === "base") add("Top stretcher", 2, interiorW, 4, "carcass", "none");
@@ -130,15 +134,19 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
       const railLen = r3(W - 2 * ff);
       add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
       add("Face-frame top rail", 1, railLen, top, "faceFrame", "none");
+      // A desk has no bottom rail — its knee stays open to the floor (it gets a
+      // deck panel + a rail under the drawer instead, below).
       if (c.frontStyle !== "desk")
         add("Face-frame bottom rail", 1, railLen, ff, "faceFrame", "none");
       const mid = !inset
         ? 0
-        : c.frontStyle === "drawers" || c.frontStyle === "desk"
+        : c.frontStyle === "drawers"
           ? c.drawerCount - 1
-          : c.frontStyle === "door_drawer"
-            ? 1
-            : 0;
+          : c.frontStyle === "desk"
+            ? c.drawerCount // a rail between drawers PLUS one under the drawer
+            : c.frontStyle === "door_drawer"
+              ? 1
+              : 0;
       if (mid > 0) add("Face-frame mid rail", mid, railLen, ff, "faceFrame", "none");
     }
 

@@ -57,18 +57,20 @@ export function genRunFrameParts(run: Run, s: Settings): Part[] {
     const ow = m.openingWidth;
     add("Face-frame top rail", 1, ow, topRail);
     // Closed bays get a bottom rail; over a toe kick it grows down to this bay's
-    // frame bottom so the inset opening (and its fronts) keep their height. A
-    // floor-standing closed bay just gets a normal rail — never a negative one.
+    // frame bottom. Open boxes (appliance opening, desk knee) stay open at the
+    // floor — a desk closes its drawer cavity with a deck panel instead.
     if (!isOpenBox(c)) {
       add("Face-frame bottom rail", 1, ow, r3(ff + Math.max(0, m.yB - m.frameBottom)));
     }
     if (isInset(c)) {
       const mid =
-        c.frontStyle === "drawers" || c.frontStyle === "desk"
+        c.frontStyle === "drawers"
           ? c.drawerCount - 1
-          : c.frontStyle === "door_drawer"
-            ? 1
-            : 0;
+          : c.frontStyle === "desk"
+            ? c.drawerCount // a rail between drawers PLUS one under the drawer
+            : c.frontStyle === "door_drawer"
+              ? 1
+              : 0;
       if (mid > 0) add("Face-frame mid rail", mid, ow, ff);
     }
   }

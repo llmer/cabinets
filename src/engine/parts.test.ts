@@ -266,4 +266,26 @@ describe("genParts — open boxes", () => {
     expect(find(parts, "Back (applied)")).toBeUndefined();
     expect(find(parts, "Drawer front")).toBeTruthy();
   });
+
+  it("framed desk: a deck closes the drawer cavity + a rail under the drawer", () => {
+    const c = makeCabinet("base", "D", {
+      frontStyle: "desk",
+      drawerCount: 1,
+      toeKick: false,
+      construction: "framed",
+      overlay: "inset",
+    });
+    const { parts } = genParts(c, noBoxes);
+    const deck = find(parts, "Drawer deck")!;
+    expect(deck).toBeTruthy(); // horizontal panel under the drawer
+    expect(deck.role).toBe("carcass");
+    expect(find(parts, "Face-frame bottom rail")).toBeUndefined(); // knee stays open at the floor
+    expect(find(parts, "Face-frame mid rail")!.qty).toBe(1); // 1 drawer → 1 rail under it
+  });
+
+  it("a frameless desk is left untouched (no deck, no extra rail)", () => {
+    const c = makeCabinet("base", "D", { frontStyle: "desk", drawerCount: 1, toeKick: false });
+    const { parts } = genParts(c, noBoxes);
+    expect(find(parts, "Drawer deck")).toBeUndefined();
+  });
 });
