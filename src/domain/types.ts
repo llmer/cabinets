@@ -147,6 +147,8 @@ export interface Settings {
   allowRotate: boolean;
   /** Face-frame stile/rail width (inches). */
   frameWidth: number;
+  /** Face-frame TOP rail width (inches) — usually wider than the stiles. */
+  faceFrameTop: number;
   /** Default construction applied to brand-new cabinets. */
   construction: Construction;
   /** Generate drawer-box parts (sides/front/back/bottom) in addition to fronts. */

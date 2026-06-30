@@ -97,6 +97,7 @@ export function SettingsView() {
           {dimField("upperBottom", "Floor → upper", 30, 80)}
           {dimField("counterH", "Counter height", 24, 48)}
           {dimField("frameWidth", "Frame / rail width", 0.75, 3)}
+          {dimField("faceFrameTop", "Frame top rail", 0.75, 4)}
         </div>
       </Card>
 

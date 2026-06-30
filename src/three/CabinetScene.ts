@@ -371,10 +371,11 @@ export class CabinetScene {
     if (opening) {
       if (framed) {
         const ff = S.frameWidth || 1.5;
+        const ftop = S.faceFrameTop || 2;
         const ffL = continuous && rm ? (rm.leftEnd ? ff : ff / 2) : ff;
         const ffR = continuous && rm ? (rm.rightEnd ? ff : ff / 2) : ff;
         this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
-        this.addBox(x0 + ffL, x1 - ffR, yT - ff, yT, ffz0, ffz1, fm);
+        this.addBox(x0 + ffL, x1 - ffR, yT - ftop, yT, ffz0, ffz1, fm);
       }
       return;
     }
@@ -394,6 +395,7 @@ export class CabinetScene {
     if (isInset(c)) {
       // Border around the opening: face-frame stile (framed) or box edge.
       const ff = effectiveFrameWidth(c, S);
+      const ftop = framed ? S.faceFrameTop || 2 : ff; // (wider) top rail when framed
       const railGap = insetStackGap(c, S); // mid rail (framed/railed) or reveal
       const hasRails = framed || isRailInset(c);
       const railMat = framed ? fm : this.matCarcass;
@@ -407,7 +409,7 @@ export class CabinetScene {
         // shared joint stiles are single seamless boxes, owned by the left bay),
         // sat proud of the carcass (ffz*) so the overlap never z-fights.
         this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
-        this.addBox(rl, rr, yT - ff, yT, ffz0, ffz1, fm);
+        this.addBox(rl, rr, yT - ftop, yT, ffz0, ffz1, fm);
         // Bottom rail spans from the lower of (this bay's frame bottom, box
         // bottom) up to the opening — so a floor bay's rail seats at its box.
         if (!desk) this.addBox(rl, rr, Math.min(bayFB, yB), yB + ff, ffz0, ffz1, fm);
@@ -425,12 +427,12 @@ export class CabinetScene {
         for (let i = 0; i < nd; i++) {
           const a = ol + ((or - ol) * i) / nd + gap / 2;
           const b = ol + ((or - ol) * (i + 1)) / nd - gap / 2;
-          this.addBox(a, b, yB + ff + gap, yT - ff - gap, iz0, iz1, fm);
-          hbar(a, b, yB + ff, yT - ff, true);
+          this.addBox(a, b, yB + ff + gap, yT - ftop - gap, iz0, iz1, fm);
+          hbar(a, b, yB + ff, yT - ftop, true);
         }
       } else {
         const hs = getDrawerHeights(c, S);
-        let y = yT - ff;
+        let y = yT - ftop;
         hs.forEach((dh, i) => {
           this.addBox(ol, or, y - dh, y, iz0, iz1, fm);
           hbar(ol, or, y - dh, y, false);

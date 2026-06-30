@@ -184,7 +184,10 @@ function insetFace(
   frameColor: string,
   ends: RunEnds,
 ): ReactNode {
-  const ffpx = Math.max(2.5, effFF * ppi); // side stiles + top/bottom border
+  const ffpx = Math.max(2.5, effFF * ppi); // side stiles + bottom border
+  // The top rail is usually wider than the stiles when framed.
+  const topV = isFramed(c) ? s.faceFrameTop || 2 : effFF;
+  const topPx = Math.max(2.5, topV * ppi);
   // A shared joint shows half a stile (its neighbour supplies the other half),
   // so a run of joined cabinets reads as one continuous frame.
   const leftFfpx = ends.leftEnd ? ffpx : Math.max(1.5, ffpx / 2);
@@ -209,8 +212,8 @@ function insetFace(
       <div style={{ position: "absolute", top: "44%", left: "50%", width: 2, height: "12%", background: "rgba(31,20,14,.5)", transform: "translateX(-50%)", borderRadius: 1 }} />
     </div>
   );
-  const railEnd = (key: string) => (
-    <div key={key} style={{ flex: "0 0 " + ffpx + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
+  const railEnd = (key: string, px: number = ffpx) => (
+    <div key={key} style={{ flex: "0 0 " + px + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
   );
   const railMid = (key: string) => (
     <div key={key} style={{ flex: "0 0 " + railpx + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
@@ -243,7 +246,7 @@ function insetFace(
   } else if (fs === "door_drawer") {
     const dh = getDrawerHeights(c, s)[0];
     const boxH = boxHeight(c, s);
-    const doorsGrow = Math.max(1, boxH - 3 * effFF - dh);
+    const doorsGrow = Math.max(1, boxH - topV - 2 * effFF - dh);
     mods = [drawerMod("m0", dh), doorsMod("m1", doorsGrow, c.doorCount)];
   } else if (fs === "desk") {
     const hs = getDrawerHeights(c, s);
@@ -251,7 +254,7 @@ function insetFace(
     mods = hs.map((dh, i) => drawerMod("m" + i, dh));
     mods.push(openMod("open", Math.max(1, boxHeight(c, s) - sum)));
   }
-  const col: ReactNode[] = [railEnd("top")];
+  const col: ReactNode[] = [railEnd("top", topPx)];
   mods.forEach((m, i) => {
     if (i > 0) col.push(railMid("r" + i));
     col.push(m);
@@ -287,13 +290,14 @@ function insetFace(
 function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings, ends: RunEnds): ReactNode {
   const framed = (c.construction || "frameless") === "framed";
   const ffpx = Math.max(2.5, (s.frameWidth || 1.5) * ppi);
+  const topPx = Math.max(2.5, (s.faceFrameTop || 2) * ppi); // wider top rail
   const leftFfpx = ends.leftEnd ? ffpx : Math.max(1.5, ffpx / 2);
   const rightFfpx = ends.rightEnd ? ffpx : Math.max(1.5, ffpx / 2);
   const kids: ReactNode[] = [];
   if (framed) {
     kids.push(<div key="sl" style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: leftFfpx, background: FRAME_BG }} />);
     kids.push(<div key="sr" style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: rightFfpx, background: FRAME_BG }} />);
-    kids.push(<div key="tr" style={{ position: "absolute", top: 0, left: 0, right: 0, height: ffpx, background: FRAME_BG }} />);
+    kids.push(<div key="tr" style={{ position: "absolute", top: 0, left: 0, right: 0, height: topPx, background: FRAME_BG }} />);
   }
   const pad = framed ? ffpx : 5;
   kids.push(
@@ -301,7 +305,7 @@ function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings, ends: R
       key="void"
       style={{
         position: "absolute",
-        top: framed ? ffpx : 6,
+        top: framed ? topPx : 6,
         left: pad,
         right: pad,
         bottom: 4,

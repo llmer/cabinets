@@ -5,6 +5,7 @@ import {
   faceHeight,
   insetStackGap,
   isInset,
+  topBorderWidth,
 } from "./geometry";
 import { r3 } from "./units";
 
@@ -34,15 +35,16 @@ export function drawerStackBudget(c: Cabinet, s: Settings): number {
   }
 
   if (isInset(c)) {
-    // Inset fronts live inside the openings. Top/bottom are bounded by the
-    // frame (framed) or the box edge (frameless); fronts are separated by mid
+    // Inset fronts live inside the openings. The top is bounded by the (wider)
+    // top rail, the bottom by the frame/box edge; fronts are separated by mid
     // rails (framed) or reveals (frameless).
     const ff = effectiveFrameWidth(c, s);
+    const top = topBorderWidth(c, s);
     const gap = insetStackGap(c, s);
     if (c.frontStyle === "door_drawer") {
-      return r3(boxH - 2 * ff - gap - DOOR_DRAWER_MIN_DOOR);
+      return r3(boxH - top - ff - gap - DOOR_DRAWER_MIN_DOOR);
     }
-    return r3(boxH - 2 * ff - (n - 1) * gap);
+    return r3(boxH - top - ff - (n - 1) * gap);
   }
 
   // Full overlay (frameless, or framed with doors covering the frame).

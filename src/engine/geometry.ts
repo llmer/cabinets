@@ -34,6 +34,15 @@ export function effectiveFrameWidth(c: Cabinet, s: Settings): number {
 }
 
 /**
+ * Width of the TOP border above an inset opening: the (usually taller)
+ * face-frame top rail when framed, otherwise the carcass edge. The sides and
+ * bottom use `effectiveFrameWidth`; only the top differs.
+ */
+export function topBorderWidth(c: Cabinet, s: Settings): number {
+  return isFramed(c) ? s.faceFrameTop || 2 : carcassThickness(s);
+}
+
+/**
  * Vertical spacing between stacked inset fronts:
  * - framed       → a face-frame mid rail (frameWidth)
  * - railed inset → an inset rail (frameWidth)

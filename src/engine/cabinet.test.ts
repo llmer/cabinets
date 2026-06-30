@@ -114,8 +114,8 @@ describe("drawer-height model", () => {
       construction: "framed",
       overlay: "inset",
     });
-    // boxH 30 - 2*1.5 - (3-1)*1.5 = 30 - 3 - 3 = 24
-    expect(drawerStackBudget(c, S)).toBe(24);
+    // boxH 30 - top rail 2 - bottom 1.5 - (3-1)*1.5 mid = 30 - 2 - 1.5 - 3 = 23.5
+    expect(drawerStackBudget(c, S)).toBe(23.5);
   });
 
   it("framed full-overlay budget ignores rails (fronts cover the frame)", () => {

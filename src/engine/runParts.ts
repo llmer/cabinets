@@ -51,10 +51,11 @@ export function genRunFrameParts(run: Run, s: Settings): Part[] {
     add("Face-frame stile", 1, run.frameTop - bottom, ff);
   }
 
+  const topRail = s.faceFrameTop || 2; // the (wider) top rail across a framed run
   for (const m of run.members) {
     const c = m.cabinet;
     const ow = m.openingWidth;
-    add("Face-frame top rail", 1, ow, ff);
+    add("Face-frame top rail", 1, ow, topRail);
     // Closed bays get a bottom rail; over a toe kick it grows down to this bay's
     // frame bottom so the inset opening (and its fronts) keep their height. A
     // floor-standing closed bay just gets a normal rail — never a negative one.

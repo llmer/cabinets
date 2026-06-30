@@ -12,6 +12,7 @@ import {
   isInset,
   isOpenBox,
   isRailInset,
+  topBorderWidth,
 } from "./geometry";
 import { getDrawerHeights } from "./drawers";
 import { r3 } from "./units";
@@ -55,6 +56,7 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
   const bt = backThickness(s);
   const rev = s.reveal;
   const ff = s.frameWidth || 1.5;
+  const top = topBorderWidth(c, s); // top rail (framed) — usually wider than ff
 
   const W = c.width;
   const D = c.depth;
@@ -119,7 +121,7 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
     // APPLIANCE OPENING: no front. In framed mode, surround the bay.
     if (framed && frame.emitFaceFrame) {
       add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
-      add("Face-frame top rail", 1, r3(W - 2 * ff), ff, "faceFrame", "none");
+      add("Face-frame top rail", 1, r3(W - 2 * ff), top, "faceFrame", "none");
     }
   } else {
     // FACE-FRAME stock — solid hardwood (not nested). Mid rails only divide
@@ -127,7 +129,7 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
     if (framed && frame.emitFaceFrame) {
       const railLen = r3(W - 2 * ff);
       add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
-      add("Face-frame top rail", 1, railLen, ff, "faceFrame", "none");
+      add("Face-frame top rail", 1, railLen, top, "faceFrame", "none");
       if (c.frontStyle !== "desk")
         add("Face-frame bottom rail", 1, railLen, ff, "faceFrame", "none");
       const mid = !inset
@@ -174,11 +176,11 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
       } else if (c.frontStyle === "door_drawer") {
         const dh = getDrawerHeights(c, s)[0];
         add("Drawer front", 1, frontW, r3(dh - 2 * insR), "front", "all");
-        const openHdoor = r3(boxH - 2 * effFF - gap - dh);
+        const openHdoor = r3(boxH - top - effFF - gap - dh);
         const nd = c.doorCount;
         add("Door", nd, doorW(nd), r3(openHdoor - 2 * insR), "front", "all");
       } else {
-        const openH = r3(boxH - 2 * effFF);
+        const openH = r3(boxH - top - effFF);
         const nd = c.doorCount;
         add("Door", nd, doorW(nd), r3(openH - 2 * insR), "front", "all");
       }

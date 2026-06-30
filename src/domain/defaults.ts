@@ -90,6 +90,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kerf: 0.125,
   allowRotate: true,
   frameWidth: 1.5,
+  faceFrameTop: 2,
   construction: "frameless",
   includeDrawerBoxes: true,
   showGuideLines: true,

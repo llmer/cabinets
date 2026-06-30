@@ -112,6 +112,12 @@ describe("genParts — face frame, inset", () => {
     expect(find(parts, "Face-frame bottom rail")).toBeTruthy();
   });
 
+  it("makes the top rail wider (2\") than the 1.5\" stiles and bottom rail", () => {
+    expect(find(parts, "Face-frame top rail")!.width).toBe(2);
+    expect(find(parts, "Face-frame stile")!.width).toBe(1.5);
+    expect(find(parts, "Face-frame bottom rail")!.width).toBe(1.5);
+  });
+
   it("sizes inset doors inside the opening", () => {
     const door = find(parts, "Door")!;
     // opening width 24 - 2*1.5 = 21; doorW = (21 - 0.125*3)/2 = 10.3125 -> r3 10.313

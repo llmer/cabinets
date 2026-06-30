@@ -92,6 +92,14 @@ describe("genRunFrameParts — continuous frame", () => {
     expect(run.members.map((m) => m.openingWidth)).toEqual([27.75, 16.5, 21.75]);
   });
 
+  it("makes the top rail 2 inches — wider than the 1.5 inch stiles", () => {
+    const parts = genRunFrameParts(run, S);
+    const tops = parts.filter((p) => p.name === "Face-frame top rail");
+    expect(tops).toHaveLength(3); // one per bay
+    expect(tops.every((p) => p.width === 2)).toBe(true);
+    expect(parts.filter((p) => p.name === "Face-frame stile").every((p) => p.width === 1.5)).toBe(true);
+  });
+
   it("runs each bay's frame to its own bottom: 3.25 over the toe kick, floor at the open bays", () => {
     expect(run.members.map((m) => m.frameBottom)).toEqual([3.25, 0, 0]);
     expect(run.frameTop).toBe(34.5);
