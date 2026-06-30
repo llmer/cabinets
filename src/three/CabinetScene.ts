@@ -443,10 +443,12 @@ export class CabinetScene {
           }
         });
         // A framed desk gets a rail under the drawer + a deck panel that closes
-        // the drawer cavity off from the open knee below.
+        // the drawer cavity off from the open knee below. Draw the rail in the
+        // PROUD face-frame plane (ffz*, like the top rail — not the recessed
+        // inset plane) so it covers the deck and reads as one flush piece.
         if (desk && framed) {
-          drawRail(y - railGap, y);
-          this.addBox(x0 + matT, x1 - matT, y - matT, y, 0, cd, carcass);
+          this.addBox(rl, rr, y - railGap, y, ffz0, ffz1, fm);
+          this.addBox(x0 + matT, x1 - matT, y - railGap, y - railGap + matT, 0, cd, fm);
         }
         if (c.frontStyle === "door_drawer") {
           drawRail(y - railGap, y);
