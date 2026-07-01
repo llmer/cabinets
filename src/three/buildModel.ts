@@ -92,10 +92,19 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   const cd = openBox ? D : D - backT;
   const x1 = W;
 
+  const ff = s.frameWidth || 1.5; // stile / mid / bottom-rail width
+  const topRail = s.faceFrameTop || 2; // the (wider) top rail
+  // A toe-kicked framed box drops its frame — and its exposed end panels — to
+  // the frame-floor gap (3.25" over the toe kick); floor-standing boxes (an
+  // opening / desk) keep their frame at the box bottom. Mirrors the main scene.
+  const based = c.type !== "wall" && c.toeKick !== false && !openBox;
+  const frameBottom = framed && based ? s.faceFrameFloorGap || 3.25 : yB;
+
   /* ---------- carcass ---------- */
-  // side panels — cut, drilled and edge-banded at the `sides` stage
-  push("sides", "carcass", 0, matT, yB, yT, 0, cd);
-  push("sides", "carcass", x1 - matT, x1, yB, yT, 0, cd);
+  // side panels — cut, drilled and edge-banded at the `sides` stage. On a framed
+  // toe-kicked box the (exposed) ends drop to the frame line, like the run ends.
+  push("sides", "carcass", 0, matT, frameBottom, yT, 0, cd);
+  push("sides", "carcass", x1 - matT, x1, frameBottom, yT, 0, cd);
   // bottom (closed boxes only)
   if (!openBox) push("carcass", "carcass", matT, x1 - matT, yB, yB + matT, 0, cd);
   // top: base/desk get two stretchers (front + back), others a full top
@@ -109,9 +118,12 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   if (!openBox) push("back", "back", matT, x1 - matT, yB, yT, 0, backT);
   // desk writing surface, capping the open box (not a nested cut-list part)
   if (desk) push("desktop", "carcass", 0, W, yT, yT + matT, 0, D);
-  // recessed toe-kick plinth, set back from the front
-  if (c.type !== "wall" && c.toeKick !== false && !openBox && yB > 0) {
-    push("base", "toeKick", 0, W, 0, yB, 0, Math.max(matT, D - s.toeKickDepth));
+  // Separate toe-kick base: recessed from the front, and (with a separate base)
+  // set in on the exposed end sides too — the box-on-a-base look. The isolated
+  // build shows a lone box, so both ends are treated as exposed.
+  if (based && yB > 0) {
+    const rec = s.separateBase ? s.toeKickSideRecess : 0;
+    push("base", "toeKick", rec, W - rec, 0, yB, 0, Math.max(matT, D - s.toeKickDepth));
   }
 
   /* ---------- shelves (interior; shown in cutaway) ---------- */
@@ -130,12 +142,12 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   const fz1 = D;
 
   // Appliance opening: no front, just the face-frame surround when framed.
+  // Its frame runs to the floor (frameBottom) with the wider top rail.
   if (opening) {
     if (framed) {
-      const ff = s.frameWidth || 1.5;
-      push("faceFrame", "frame", 0, ff, yB, yT, fz0, fz1);
-      push("faceFrame", "frame", x1 - ff, x1, yB, yT, fz0, fz1);
-      push("faceFrame", "frame", ff, x1 - ff, yT - ff, yT, fz0, fz1);
+      push("faceFrame", "frame", 0, ff, frameBottom, yT, fz0, fz1);
+      push("faceFrame", "frame", x1 - ff, x1, frameBottom, yT, fz0, fz1);
+      push("faceFrame", "frame", ff, x1 - ff, yT - topRail, yT, fz0, fz1);
     }
     return out;
   }
@@ -159,13 +171,14 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   // proud fronts later cover it), so unlike the whole-run render we always draw
   // it, tucking it one panel-thickness back when the fronts sit proud.
   if (framed) {
-    const FF = s.frameWidth || 1.5;
     const zf1 = isInset(c) ? fz1 : fz0;
     const zf0 = zf1 - FRONT_T;
-    push("faceFrame", "frame", 0, FF, yB, yT, zf0, zf1); // left stile
-    push("faceFrame", "frame", x1 - FF, x1, yB, yT, zf0, zf1); // right stile
-    push("faceFrame", "frame", FF, x1 - FF, yT - FF, yT, zf0, zf1); // top rail
-    if (!desk) push("faceFrame", "frame", FF, x1 - FF, yB, yB + FF, zf0, zf1); // bottom rail
+    push("faceFrame", "frame", 0, ff, frameBottom, yT, zf0, zf1); // left stile
+    push("faceFrame", "frame", x1 - ff, x1, frameBottom, yT, zf0, zf1); // right stile
+    push("faceFrame", "frame", ff, x1 - ff, yT - topRail, yT, zf0, zf1); // top rail (wider)
+    // Closed boxes get a bottom rail; over a toe kick it grows down to the frame
+    // line. A desk has no bottom rail — its knee stays open (deck closes it).
+    if (!desk) push("faceFrame", "frame", ff, x1 - ff, frameBottom, yB + ff, zf0, zf1);
   }
 
   if (isInset(c)) {
@@ -176,6 +189,7 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
     // Framed mid rails belong to the face frame; a frameless railed-inset rail
     // is installed with the drawer stack it divides (there is no face-frame step).
     const railStage: BuildStage = framed ? "faceFrame" : "drawers";
+    const ftop = framed ? topRail : ff; // wider top rail bounds the top opening
     const rl = 0 + ff;
     const rr = x1 - ff;
     const iz0 = fz0;
@@ -190,12 +204,12 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
       for (let i = 0; i < nd; i++) {
         const a = ol + ((or - ol) * i) / nd + GAP / 2;
         const b = ol + ((or - ol) * (i + 1)) / nd - GAP / 2;
-        push("doors", "front", a, b, yB + ff + GAP, yT - ff - GAP, iz0, iz1);
-        hbar(a, b, yB + ff, yT - ff, true);
+        push("doors", "front", a, b, yB + ff + GAP, yT - ftop - GAP, iz0, iz1);
+        hbar(a, b, yB + ff, yT - ftop, true);
       }
     } else {
       const hs = getDrawerHeights(c, s);
-      let y = yT - ff;
+      let y = yT - ftop;
       hs.forEach((dh, i) => {
         push("drawerFronts", "front", ol, or, y - dh, y, iz0, iz1);
         hbar(ol, or, y - dh, y, false);
@@ -205,6 +219,12 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
           y -= railGap;
         }
       });
+      // Framed desk: a rail under the drawer (in the proud face-frame plane, like
+      // the top rail) + a deck panel closing the drawer cavity off from the knee.
+      if (desk && framed) {
+        push("faceFrame", "frame", rl, rr, y - railGap, y, fz0, fz1);
+        push("carcass", "carcass", matT, x1 - matT, y - railGap, y - railGap + matT, 0, cd);
+      }
       if (c.frontStyle === "door_drawer") {
         drawRail(y - railGap, y);
         y -= railGap;

@@ -137,6 +137,11 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
       'Join the two 4" top stretchers between the side panels (glue + confirmat screws). There is no bottom and no back — the knee space stays open, so the desktop plus a corner brace keep it square.',
       "carcass",
     );
+    if (g.framed)
+      push(
+        "Fit a deck panel across the interior just under the drawer — it closes the drawer cavity off from the open knee below; the face-frame rail faces its front edge.",
+        "carcass",
+      );
     push(
       "Fasten the desktop down through the top stretchers, checking the frame for square as you go.",
       "desktop",

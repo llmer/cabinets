@@ -136,6 +136,55 @@ describe("cabinetBuildParts — base desk with an open knee below the drawers", 
   });
 });
 
+describe("cabinetBuildParts — lockstep with the run-model face-frame changes", () => {
+  const b1 = makeCabinet("base", "B1", {
+    construction: "framed",
+    overlay: "inset_rail",
+    frontStyle: "door_drawer",
+    doorCount: 1,
+    drawerCount: 1,
+    toeKick: true,
+    drawerHeights: [6],
+  });
+  const p1 = cabinetBuildParts(b1, S);
+  const frame1 = ofKind(p1, "frame");
+
+  it("uses the wider 2\" top rail", () => {
+    // exactly one frame member is faceFrameTop tall — the top rail
+    const top = frame1.filter((f) => Math.abs(f.box[3] - f.box[2] - S.faceFrameTop) < 0.01);
+    expect(top).toHaveLength(1);
+  });
+
+  it("drops the face frame AND the end panels to the frame-floor gap over a toe kick", () => {
+    expect(Math.min(...frame1.map((f) => f.box[2]))).toBeCloseTo(S.faceFrameFloorGap, 5);
+    const sides = onStage(p1, "sides");
+    expect(Math.min(...sides.map((s2) => s2.box[2]))).toBeCloseTo(S.faceFrameFloorGap, 5);
+  });
+
+  it("recesses the separate toe-kick base on its exposed sides", () => {
+    const base = ofKind(p1, "toeKick")[0];
+    expect(base.box[0]).toBeCloseTo(S.toeKickSideRecess, 5);
+    expect(base.box[1]).toBeCloseTo(b1.width - S.toeKickSideRecess, 5);
+  });
+
+  it("frames a desk with a rail under the drawer + a deck panel, no bottom rail", () => {
+    const dk = makeCabinet("base", "DK", {
+      construction: "framed",
+      overlay: "inset_rail",
+      frontStyle: "desk",
+      drawerCount: 1,
+      toeKick: false,
+      drawerHeights: [5],
+    });
+    const pDk = cabinetBuildParts(dk, S);
+    // 2 stiles + top rail + under-drawer rail = 4 (a desk has no bottom rail)
+    expect(ofKind(pDk, "frame")).toHaveLength(4);
+    // the deck is a full-depth carcass panel installed at the carcass stage
+    const deck = onStage(pDk, "carcass").find((x) => x.kind === "carcass" && x.box[5] - x.box[4] > 10);
+    expect(deck).toBeTruthy();
+  });
+});
+
 describe("cabinetBuildParts — shelves appear in a plain door box", () => {
   it("emits one shelf part per shelf at the `shelves` stage", () => {
     const c = makeCabinet("wall", "W", { frontStyle: "doors", doorCount: 2, shelves: 2 });
