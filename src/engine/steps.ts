@@ -1,5 +1,6 @@
 import { CabinetParts, Settings } from "@/domain/types";
 import { bandingInchesPerPiece } from "./parts";
+import { Run } from "./runs";
 import { effectiveFrameWidth, isRailInset } from "./geometry";
 import { hingesForDoorHeight } from "./hardware";
 import { typeLabel } from "./labels";
@@ -69,6 +70,12 @@ export interface StepGroup {
   color: string;
   dims: string;
   steps: Step[];
+  /**
+   * Present on a RUN-level group (genRunSteps): the ids of the cabinets whose
+   * assembled run this group frames, so the walkthrough 3D renders the whole run
+   * instead of a single box. Absent on per-cabinet groups.
+   */
+  runCabinetIds?: string[];
 }
 
 /**
@@ -76,8 +83,19 @@ export interface StepGroup {
  * design's `genSteps`. The 32/37/35/22.5 mm values are intrinsic to the 32 mm
  * system and stay metric; cabinet-specific measurements honour the unit toggle.
  */
-export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGroup {
+export function genSteps(
+  cp: CabinetParts,
+  s: Settings,
+  color: string,
+  runOwned = false,
+): StepGroup {
   const { cabinet: c, geometry: g, parts } = cp;
+  // In a multi-cabinet continuous run, the boxes are built individually and then
+  // JOINED, and ONE face frame is fitted onto the whole assembled run — so the
+  // placement (join + shared toe-kick base), the face frame, and the inset
+  // fronts (which land in the frame) are all done at the RUN level (genRunSteps).
+  // A run-owned bay's walkthrough therefore builds only its box + interior here.
+  const runFrame = runOwned;
   const u = s.units;
   const steps: Step[] = [];
   const push = (t: string, stage: BuildStage, kind?: StepKind) =>
@@ -106,15 +124,23 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
         : "Join the top panel between the side panels. There is no bottom, back or front — the appliance slides into the open bay.",
       "carcass",
     );
-    if (g.framed)
+    // Always confirm the appliance fits — the surround is sized to it, and this
+    // is the ONLY place the walkthrough flags it (whether the bay is solo or a
+    // run member whose placement/frame move to the run group).
+    push(
+      "Confirm the opening clears your appliance before you go further — measure its required width, depth and height plus the maker’s side and top clearances against this opening.",
+      "carcass",
+    );
+    if (g.framed && !runFrame)
       push(
         "Add the face-frame stiles and a top rail around the opening, flush to the outside edges.",
         "faceFrame",
       );
-    push(
-      "Stand the surround in place, scribe it to the neighbouring cabinets or wall, and fasten. Confirm the opening clears your appliance — measure its required width, depth and height plus the maker’s side and top clearances before you build.",
-      "base",
-    );
+    if (!runFrame)
+      push(
+        "Stand the surround in place, scribe it to the neighbouring cabinets or wall, and fasten.",
+        "base",
+      );
     return { ...head, steps };
   }
 
@@ -145,7 +171,7 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
         "carcass",
       );
     push(
-      "Fasten the desktop down through the top stretchers, checking the frame for square as you go.",
+      "Fasten the desk's top surface down through the top stretchers, checking the frame for square as you go. The work top is supplied separately — it isn't cut from the plywood in this list.",
       "desktop",
     );
   } else {
@@ -165,69 +191,75 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
     );
   }
 
-  if (c.type === "wall")
-    push(
-      `Find the studs and strike a level line at ${fmtLen(s.upperBottom, u)} off the floor. Hang the cabinet on a temporary ledger, then drive screws through the back rail into every stud.`,
-      "base",
-    );
-  else if (c.frontStyle === "desk")
-    push(
-      "Stand the unit on its side panels and shim level on the floor — the legs run straight to the ground, no toe kick.",
-      "base",
-    );
-  else if (c.toeKick !== false) {
-    const tallNote =
-      c.type === "tall"
-        ? " Then anchor the top back into the wall studs — a tall cabinet must be screwed to the wall so it can’t tip."
-        : "";
-    push(
-      s.separateBase
-        ? `Build a separate toe-kick base — a ${fmtLen(s.toeKick, u)}-tall plywood ladder set back ~${fmtLen(s.toeKickDepth, u)} at the front and ~${fmtLen(s.toeKickSideRecess, u)} at any exposed end, with a fascia across the front. Level it, set this cabinet on top and screw down through the bottom; the face frame laps down over it to ~${fmtLen(s.faceFrameFloorGap, u)} off the floor.${tallNote}`
-        : `Build a toe-kick base — a simple ${fmtLen(s.toeKick, u)}-tall ladder set back ~${fmtLen(s.toeKickDepth, u)} from the front — level it, then set this cabinet on top and screw down through the bottom.${tallNote}`,
-      "base",
-    );
+  // Placement (hang / set on the toe-kick base) is a per-cabinet step ONLY for a
+  // standalone box. In a joined run the boxes are set + screwed together and the
+  // shared base built at the run level (genRunSteps), so a run-owned bay skips it.
+  if (!runFrame) {
+    if (c.type === "wall")
+      push(
+        `Find the studs and strike a level line at ${fmtLen(s.upperBottom, u)} off the floor. Hang the cabinet on a temporary ledger, then drive screws through the back rail into every stud.`,
+        "base",
+      );
+    else if (c.frontStyle === "desk")
+      push(
+        "Stand the unit on its side panels and shim level on the floor — the legs run straight to the ground, no toe kick.",
+        "base",
+      );
+    else if (c.toeKick !== false) {
+      const tallNote =
+        c.type === "tall"
+          ? " Then anchor the top back into the wall studs — a tall cabinet must be screwed to the wall so it can’t tip."
+          : "";
+      push(
+        s.separateBase
+          ? `Build a separate toe-kick base — a ${fmtLen(s.toeKick, u)}-tall plywood ladder set back ~${fmtLen(s.toeKickDepth, u)} at the front and ~${fmtLen(s.toeKickSideRecess, u)} at any exposed end, with a fascia across the front. Level it, set this cabinet on top and screw down through the bottom; the face frame laps down over it to ~${fmtLen(s.faceFrameFloorGap, u)} off the floor.${tallNote}`
+          : `Build a toe-kick base — a simple ${fmtLen(s.toeKick, u)}-tall ladder set back ~${fmtLen(s.toeKickDepth, u)} from the front — level it, then set this cabinet on top and screw down through the bottom.${tallNote}`,
+        "base",
+      );
+    }
+    else
+      push(
+        "Set the finished box directly on the floor (no toe kick) and shim it dead level before fastening anything.",
+        "base",
+      );
   }
-  else
-    push(
-      "Set the finished box directly on the floor (no toe kick) and shim it dead level before fastening anything.",
-      "base",
-    );
 
-  if (g.framed) {
-    // Frame counts come from geometry, not the parts list: under a continuous
-    // run frame the stiles/rails are emitted once at the run level, so this box
-    // carries none — but the walkthrough still narrates milling its section.
+  if (g.framed && !runFrame) {
+    // A standalone (non-run) cabinet: its own self-contained face frame. In a
+    // joined run the ONE continuous frame is fitted at the run level instead.
     const ffw = s.frameWidth || 1.5;
     const ffTop = s.faceFrameTop || 2;
-    const railLen = c.width; // top + bottom rails run the full width of the box
-    const midLen = c.width - 2 * ffw; // mid rails fit between the captured stiles
-    const stileLen = Math.max(0, g.boxHeight - ffTop - (g.openBox ? 0 : ffw));
-    const ffStiles = 2;
-    const midRails = g.inset
-      ? c.frontStyle === "drawers"
-        ? Math.max(0, c.drawerCount - 1)
-        : c.frontStyle === "desk"
-          ? c.drawerCount
-          : c.frontStyle === "door_drawer"
-            ? 1
-            : 0
-      : 0;
-    // one continuous top rail + a bottom rail (none on an open box — open knee) +
-    // the mid rails
-    const fullRails = 1 + (g.openBox ? 0 : 1);
-    const ffl = Math.ceil((ffStiles * stileLen + fullRails * railLen + midRails * midLen) / 12);
-    push(
-      `Cut ~${ffl} ft of 3/4" hardwood into one continuous top rail${g.openBox ? "" : " and bottom rail"} the full width of the box, ${ffStiles} stiles and ${midRails} mid rail${midRails === 1 ? "" : "s"} — ${fmtLen(ffw, u)} wide (${fmtLen(ffTop, u)} top rail).`,
-      "faceFrame",
-    );
-    push(
-      "Pocket-screw the frame on the bench: the long rails run the full width and the stiles are captured between them — check it for square as you clamp.",
-      "faceFrame",
-    );
-    push(
-      "Glue and pin the assembled face frame onto the front of the box, flush to the outside edges.",
-      "faceFrame",
-    );
+    {
+      const railLen = c.width; // top + bottom rails run the full width of the box
+      const midLen = c.width - 2 * ffw; // mid rails fit between the captured stiles
+      const stileLen = Math.max(0, g.boxHeight - ffTop - (g.openBox ? 0 : ffw));
+      const ffStiles = 2;
+      const midRails = g.inset
+        ? c.frontStyle === "drawers"
+          ? Math.max(0, c.drawerCount - 1)
+          : c.frontStyle === "desk"
+            ? c.drawerCount
+            : c.frontStyle === "door_drawer"
+              ? 1
+              : 0
+        : 0;
+      // one continuous top rail + a bottom rail (none on an open box — open knee) +
+      // the mid rails
+      const fullRails = 1 + (g.openBox ? 0 : 1);
+      const ffl = Math.ceil((ffStiles * stileLen + fullRails * railLen + midRails * midLen) / 12);
+      push(
+        `Cut ~${ffl} ft of 3/4" hardwood into one continuous top rail${g.openBox ? "" : " and bottom rail"} the full width of the box, ${ffStiles} stiles and ${midRails} mid rail${midRails === 1 ? "" : "s"} — ${fmtLen(ffw, u)} wide (${fmtLen(ffTop, u)} top rail).`,
+        "faceFrame",
+      );
+      push(
+        "Pocket-screw the frame on the bench: the long rails run the full width and the stiles are captured between them — check it for square as you clamp.",
+        "faceFrame",
+      );
+      push(
+        "Glue and pin the assembled face frame onto the front of the box, flush to the outside edges.",
+        "faceFrame",
+      );
+    }
   }
 
   const doors = parts.filter((p) => p.name === "Door").reduce((a, p) => a + p.qty, 0);
@@ -275,39 +307,141 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
       "shelves",
     );
 
-  // 3. Hang the doors.
-  if (doors > 0) {
-    const maxDoorH = Math.max(
-      0,
-      ...parts.filter((p) => p.name === "Door").map((p) => p.width),
-    );
-    const hingesPer = hingesForDoorHeight(maxDoorH);
-    if (g.inset)
-      push(
-        `Bore 35 mm hinge cups (${hingesPer} per door) and hang ${doors} inset door${doors > 1 ? "s" : ""} ${g.framed ? "inside the frame openings" : "flush in the box openings"} with inset/clip hinges, setting an even 1/8" reveal on every side.`,
-        "doors",
+  // The faces land in the face frame, so in a joined run they go on at the run
+  // level (after the ONE frame is fitted) — see genRunSteps. A standalone box
+  // hangs its own doors / fronts / pulls here.
+  if (!runFrame) {
+    // 3. Hang the doors.
+    if (doors > 0) {
+      const maxDoorH = Math.max(
+        0,
+        ...parts.filter((p) => p.name === "Door").map((p) => p.width),
       );
-    else
+      const hingesPer = hingesForDoorHeight(maxDoorH);
+      if (g.inset)
+        push(
+          `Bore 35 mm hinge cups (${hingesPer} per door) and hang ${doors} inset door${doors > 1 ? "s" : ""} ${g.framed ? "inside the frame openings" : "flush in the box openings"} with inset/clip hinges, setting an even 1/8" reveal on every side.`,
+          "doors",
+        );
+      else
+        push(
+          `Bore 35 mm hinge cups (${hingesPer} per door) 22.5 mm in from the door edge. Mount ${doors} full-overlay door${doors > 1 ? "s" : ""} and dial the reveal to an even 1/8" between them.`,
+          "doors",
+        );
+    }
+
+    // 4. Attach the drawer FACES to their boxes — its own step, set to the reveal.
+    if (drw > 0)
       push(
-        `Bore 35 mm hinge cups (${hingesPer} per door) 22.5 mm in from the door edge. Mount ${doors} full-overlay door${doors > 1 ? "s" : ""} and dial the reveal to an even 1/8" between them.`,
-        "doors",
+        `Attach ${nN(drw, "drawer front", "drawer fronts")}: tack each face onto its box with a dab of hot-melt or double-sided tape to set an even 1/8" reveal all round, open the drawer and drive two screws from inside the box, then peel and repeat.`,
+        "drawerFronts",
+      );
+
+    // 5. Drill + fasten the pulls — the very last thing to go on.
+    const nPulls = doors + drw;
+    if (nPulls > 0)
+      push(
+        `Mark, drill and fasten ${nN(nPulls, "pull", "pulls")} — keep ${nPulls === 1 ? "it" : "them"} in a consistent line (centred on the drawer fronts, an even inset on the door stiles). Stand back: the box is done.`,
+        "pulls",
       );
   }
 
-  // 4. Attach the drawer FACES to their boxes — its own step, set to the reveal.
+  return { ...head, steps };
+}
+
+/**
+ * Run-level assembly steps: after each box is built individually, the run is put
+ * together and ONE continuous face frame (and the shared toe-kick base) is
+ * fitted onto the whole assembled run — mirroring the "Run" cut group. Emitted
+ * once per multi-cabinet continuous framed run; the member bays skip these beats.
+ */
+export function genRunSteps(
+  run: Run,
+  members: CabinetParts[],
+  s: Settings,
+  color: string,
+): StepGroup {
+  const u = s.units;
+  const steps: Step[] = [];
+  const push = (t: string, stage: BuildStage) => steps.push({ n: steps.length + 1, t, stage });
+
+  const names = members.map((m) => m.cabinet.name);
+  const label = names.length > 2 ? `${names[0]}–${names[names.length - 1]}` : names.join(" + ");
+  const ffw = s.frameWidth || 1.5;
+  const ffTop = s.faceFrameTop || 2;
+  const runW = fmtLen(run.members.reduce((a, m) => a + m.cabinet.width, 0), u);
+
+  const wallRun = run.members.every((m) => m.cabinet.type === "wall");
+  const anyToeKick =
+    !wallRun &&
+    run.members.some(
+      (m) => m.cabinet.toeKick !== false && m.cabinet.frontStyle !== "opening" && m.cabinet.frontStyle !== "desk",
+    );
+  const doors = members.reduce(
+    (a, m) => a + m.parts.filter((p) => p.name === "Door").reduce((x, p) => x + p.qty, 0),
+    0,
+  );
+  const drw = members.reduce(
+    (a, m) => a + m.parts.filter((p) => p.name === "Drawer front").reduce((x, p) => x + p.qty, 0),
+    0,
+  );
+
+  // 1. Stand the finished boxes together and screw them into one run.
+  push(
+    wallRun
+      ? `Screw the finished boxes (${names.join(", ")}) together through the abutting side panels into one solid ${runW} run, then find the studs and hang the whole run on a level ledger at ${fmtLen(s.upperBottom, u)} off the floor — drive screws through the back rails into every stud, keeping the run dead straight.`
+      : `Stand the finished boxes (${names.join(", ")}) side by side in order and screw them together through the abutting side panels into one solid ${runW} run — check the fronts sit flush and the whole run is straight and square.`,
+    "base",
+  );
+  // 2. The shared toe-kick base under the toe-kicked bays (floor-standing bays sit on the floor).
+  if (anyToeKick)
+    push(
+      s.separateBase
+        ? `Build the separate toe-kick base — a ${fmtLen(s.toeKick, u)}-tall plywood ladder set back ~${fmtLen(s.toeKickDepth, u)} at the front and ~${fmtLen(s.toeKickSideRecess, u)} at each exposed end, with a recessed fascia. Level it, then set the run's toe-kicked cabinets on top and screw down; the floor-standing bays (appliance opening, desk) sit straight on the floor.`
+        : `Build the ${fmtLen(s.toeKick, u)}-tall toe-kick base under the toe-kicked cabinets, level it and set the run on top; the floor-standing bays sit straight on the floor.`,
+      "base",
+    );
+  // 3. Mill + assemble the ONE continuous face frame for the whole run.
+  push(
+    `Mill and assemble ONE continuous hardwood face frame for the whole ${runW} run — a full-run ${fmtLen(ffTop, u)} top rail, a ${fmtLen(ffw, u)} stile SHARED at every joint between bays, a bottom rail over each toe-kicked span, and the mid rails where fronts stack (every piece is in the "${run.members.length}-bay" Run cut list). Pocket-screw it flat and dead square on the bench — one frame, not a frame per box.`,
+    "faceFrame",
+  );
+  // 4. Fit that one frame onto the assembled run.
+  push(
+    `Glue and pin the assembled face frame onto the FRONT of the whole run at once, flush to the outside edges${anyToeKick ? `; it laps down over the toe-kick base to ~${fmtLen(s.faceFrameFloorGap, u)} off the floor` : ""}. This one frame ties all ${run.members.length} bays together.`,
+    "faceFrame",
+  );
+  // 5. Hang the doors — inset in the openings, or proud for full overlay.
+  const allInset = members.every((m) => m.geometry.inset);
+  if (doors > 0)
+    push(
+      allInset
+        ? `Hang the ${doors} inset door${doors > 1 ? "s" : ""} in their frame openings with inset/clip hinges, setting an even 1/8" reveal on every side.`
+        : `Hang the ${doors} door${doors > 1 ? "s" : ""} proud over the frame — bore the hinge cups 22.5 mm in from each door edge, mount them on full-overlay hinges, and dial an even 1/8" reveal between the fronts.`,
+      "doors",
+    );
+  // 6. Attach the drawer fronts — flush inset, or proud for full overlay.
   if (drw > 0)
     push(
-      `Attach ${nN(drw, "drawer front", "drawer fronts")}: tack each face onto its box with a dab of hot-melt or double-sided tape to set an even 1/8" reveal all round, open the drawer and drive two screws from inside the box, then peel and repeat.`,
+      allInset
+        ? `Attach the ${drw} inset drawer front${drw > 1 ? "s" : ""} to their boxes — tack each to set an even 1/8" reveal all round, then screw from inside the box.`
+        : `Attach the ${drw} drawer front${drw > 1 ? "s" : ""} proud of the frame — tack each to an even 1/8" reveal between the fronts, then screw from inside the box.`,
       "drawerFronts",
     );
-
-  // 5. Drill + fasten the pulls — the very last thing to go on.
-  const nPulls = doors + drw;
-  if (nPulls > 0)
+  // 7. Fit the pulls across the run.
+  if (doors + drw > 0)
     push(
-      `Mark, drill and fasten ${nN(nPulls, "pull", "pulls")} — keep ${nPulls === 1 ? "it" : "them"} in a consistent line (centred on the drawer fronts, an even inset on the door stiles). Stand back: the box is done.`,
+      `Mark, drill and fasten the ${doors + drw} pull${doors + drw > 1 ? "s" : ""} across the run in a consistent line. Stand back — the run is done.`,
       "pulls",
     );
 
-  return { ...head, steps };
+  return {
+    id: `run-${run.members.map((m) => m.cabinet.id).join("-")}`,
+    name: `Face frame + base · ${label} — the whole run`,
+    typeLabel: "Run",
+    color,
+    dims: `${runW} run · ${run.members.length} bays`,
+    steps,
+    runCabinetIds: run.members.map((m) => m.cabinet.id),
+  };
 }

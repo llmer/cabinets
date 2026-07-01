@@ -109,3 +109,33 @@ describe("compute — millimetre display", () => {
     expect(mmModel.cutGroups[0].parts[0].lenStr).toMatch(/mm$/);
   });
 });
+
+describe("compute — run-level build walkthrough", () => {
+  it("a multi-cabinet framed run builds each box, then ONE run-level face-frame group", () => {
+    const a = makeCabinet("base", "A", { construction: "framed", overlay: "inset", frontStyle: "doors", doorCount: 2 });
+    const b = makeCabinet("base", "B", { construction: "framed", overlay: "inset", frontStyle: "drawers", drawerCount: 3 });
+    const m = compute([a, b], { ...S, continuousFaceFrame: true });
+    // per-cabinet groups no longer carry the face frame or the fronts
+    const boxGroups = m.stepGroups.filter((g) => !g.runCabinetIds);
+    expect(boxGroups.length).toBe(2);
+    for (const g of boxGroups) {
+      const stages = g.steps.map((st) => st.stage);
+      expect(stages).not.toContain("faceFrame");
+      expect(stages).not.toContain("doors");
+      expect(stages).not.toContain("pulls");
+    }
+    // exactly one run-level group, covering both cabinets, that fits the one frame
+    const runGroups = m.stepGroups.filter((g) => g.runCabinetIds);
+    expect(runGroups).toHaveLength(1);
+    expect(runGroups[0].runCabinetIds).toEqual([a.id, b.id]);
+    expect(runGroups[0].steps.some((st) => /ONE continuous/i.test(st.t))).toBe(true);
+    expect(runGroups[0].steps.some((st) => st.stage === "doors")).toBe(true);
+  });
+
+  it("a single framed cabinet keeps its own per-box frame (no run group)", () => {
+    const a = makeCabinet("base", "Solo", { construction: "framed", frontStyle: "doors", doorCount: 2 });
+    const m = compute([a], { ...S, continuousFaceFrame: true });
+    expect(m.stepGroups.filter((g) => g.runCabinetIds)).toHaveLength(0);
+    expect(m.stepGroups[0].steps.some((st) => st.stage === "faceFrame")).toBe(true);
+  });
+});

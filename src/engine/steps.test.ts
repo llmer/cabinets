@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, makeCabinet, seedCabinets } from "@/domain/defaults";
 import { Cabinet, Settings } from "@/domain/types";
 import { genParts } from "./parts";
-import { BUILD_STAGES, genSteps } from "./steps";
+import { runsOf } from "./runs";
+import { BUILD_STAGES, genRunSteps, genSteps } from "./steps";
 
 const S: Settings = DEFAULT_SETTINGS;
 
@@ -105,6 +106,60 @@ describe("genSteps", () => {
     expect(ff).toHaveLength(3);
     expect(ff.some((st) => /mill/i.test(st.t))).toBe(false);
     expect(ff[0].t).toMatch(/^Cut /);
+  });
+
+  it("a run-owned bay builds ONLY its box — no per-box frame, base, or fronts", () => {
+    const c = makeCabinet("base", "FF", { construction: "framed", frontStyle: "door_drawer", doorCount: 2, drawerCount: 1 });
+    // runOwned=true = the run level fits the shared frame + fronts (genRunSteps)
+    const runBox = genSteps(genParts(c, S, { emitFaceFrame: false }), S, "#000", true).steps.map((st) => st.stage);
+    expect(runBox).not.toContain("faceFrame");
+    expect(runBox).not.toContain("base");
+    expect(runBox).not.toContain("doors");
+    expect(runBox).not.toContain("drawerFronts");
+    expect(runBox).not.toContain("pulls");
+    // but it still builds the box + interior
+    expect(runBox).toContain("sides");
+    expect(runBox).toContain("carcass");
+    expect(runBox).toContain("drawers");
+    // the standalone (non-run) path is unchanged — its own frame + fronts
+    const solo = genSteps(genParts(c, S), S, "#000").steps.map((st) => st.stage);
+    expect(solo).toContain("faceFrame");
+    expect(solo).toContain("doors");
+    expect(solo).toContain("pulls");
+  });
+
+  it("genRunSteps fits ONE continuous face frame onto the whole assembled run", () => {
+    const a = makeCabinet("base", "A", { construction: "framed", frontStyle: "doors", doorCount: 2 });
+    const b = makeCabinet("base", "B", { construction: "framed", frontStyle: "drawers", drawerCount: 3 });
+    const runs = runsOf([a, b], S);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].members).toHaveLength(2);
+    const grp = genRunSteps(runs[0], [genParts(a, S), genParts(b, S)], S, "#000");
+    const stages = grp.steps.map((st) => st.stage);
+    expect(stages).toContain("base"); // stand + join the boxes into the run
+    expect(stages).toContain("faceFrame"); // fit the ONE frame
+    expect(grp.runCabinetIds).toEqual([a.id, b.id]);
+    const frameStep = grp.steps.find((st) => /ONE continuous/i.test(st.t));
+    expect(frameStep).toBeTruthy();
+    expect(frameStep!.t).toMatch(/not a frame per box/i);
+  });
+
+  it("genRunSteps uses overlay (not inset) door wording for a full-overlay framed run", () => {
+    const a = makeCabinet("base", "A", { construction: "framed", overlay: "full", frontStyle: "doors", doorCount: 2 });
+    const b = makeCabinet("base", "B", { construction: "framed", overlay: "full", frontStyle: "drawers", drawerCount: 3 });
+    const runs = runsOf([a, b], S);
+    const grp = genRunSteps(runs[0], [genParts(a, S), genParts(b, S)], S, "#000");
+    const doorStep = grp.steps.find((st) => st.stage === "doors");
+    expect(doorStep).toBeTruthy();
+    // full overlay: proud over the frame, hinges 22.5 mm from the edge — NOT "inset ... frame openings"
+    expect(doorStep!.t).toMatch(/proud over the frame|22\.5 mm/i);
+    expect(doorStep!.t).not.toMatch(/inset door/i);
+    // and an inset run still says inset
+    const ia = makeCabinet("base", "IA", { construction: "framed", overlay: "inset", frontStyle: "doors", doorCount: 2 });
+    const ib = makeCabinet("base", "IB", { construction: "framed", overlay: "inset", frontStyle: "drawers", drawerCount: 3 });
+    const iruns = runsOf([ia, ib], S);
+    const igrp = genRunSteps(iruns[0], [genParts(ia, S), genParts(ib, S)], S, "#000");
+    expect(igrp.steps.find((st) => st.stage === "doors")!.t).toMatch(/inset door/i);
   });
 
   it("breaks drawer-box creation into several operations, not one bundle", () => {

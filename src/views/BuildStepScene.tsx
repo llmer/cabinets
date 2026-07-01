@@ -5,7 +5,10 @@ import { BuildStage } from "@/engine/steps";
 import { CabinetScene } from "@/three/CabinetScene";
 
 export interface BuildStepSceneProps {
-  cabinet: Cabinet;
+  /** The focused cabinet for a per-cabinet box step. Omitted for a run step. */
+  cabinet?: Cabinet;
+  /** For a run-level step: render the whole assembled run instead of one box. */
+  runCabinets?: Cabinet[];
   settings: Settings;
   /** The current step's assembly stage — drives which parts glow. */
   stage: BuildStage;
@@ -23,6 +26,19 @@ function interiorStage(stage: BuildStage): boolean {
 }
 
 /**
+ * A RUN step opens on the joined carcasses and only shows the fitted frame +
+ * fronts once the frame is glued on — so the whole-run render (which has no
+ * per-part staging) still reads as a progression. Carcass for the join/base
+ * beats and the "mill the frame on the bench" beat (the FIRST faceFrame step,
+ * before it is fitted); the finished run from the "glue it on" beat onward.
+ */
+function runStepCarcass(stage: BuildStage, revealed: BuildStage[]): boolean {
+  if (stage === "base") return true;
+  if (stage === "faceFrame") return revealed.filter((s) => s === "faceFrame").length <= 1;
+  return false;
+}
+
+/**
  * The build-tab's per-step 3D render. Mounts a {@link CabinetScene} in
  * build-focus mode and pushes the current cabinet + stage on every change, so a
  * visual learner watches the box assemble itself one step at a time.
@@ -31,16 +47,25 @@ function interiorStage(stage: BuildStage): boolean {
  */
 export function BuildStepScene({
   cabinet,
+  runCabinets,
   settings,
   stage,
   revealedStages,
   accent,
   stageLabel,
 }: BuildStepSceneProps) {
+  const isRun = !!(runCabinets && runCabinets.length);
+  const focusKey = isRun ? runCabinets!.map((c) => c.id).join(",") : cabinet?.id ?? "";
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<CabinetScene | null>(null);
   const [failed, setFailed] = useState(false);
-  const [cutaway, setCutaway] = useState(interiorStage(stage));
+  const revealedKey = revealedStages.join(",");
+  // A run step opens on the joined carcasses (join/base + milling), then shows
+  // the fitted frame + fronts once it is glued on; a box step follows the
+  // interior/cutaway rule.
+  const [cutaway, setCutaway] = useState(
+    isRun ? runStepCarcass(stage, revealedStages) : interiorStage(stage),
+  );
 
   // create once
   useEffect(() => {
@@ -61,16 +86,22 @@ export function BuildStepScene({
 
   // Default the cutaway on/off as the step's stage changes (user can override).
   useEffect(() => {
-    setCutaway(interiorStage(stage));
-  }, [stage, cabinet.id]);
+    setCutaway(isRun ? runStepCarcass(stage, revealedStages) : interiorStage(stage));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, focusKey, revealedKey]);
 
-  // push the focused cabinet + stage on any relevant change
-  const revealedKey = revealedStages.join(",");
+  // push the focused cabinet (or whole run) + stage on any relevant change
   useEffect(() => {
-    sceneRef.current?.setBuildFocus(cabinet, settings, stage, revealedStages, accent, !cutaway);
+    if (isRun && runCabinets) {
+      // Run step: render the whole assembled run (the continuous frame is drawn
+      // once across all bays); fronts hidden until the frame is fitted.
+      sceneRef.current?.setRunFocus(runCabinets, settings, !cutaway);
+    } else if (cabinet) {
+      sceneRef.current?.setBuildFocus(cabinet, settings, stage, revealedStages, accent, !cutaway);
+    }
     // revealedStages is keyed by revealedKey to avoid re-pushing on a fresh array ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cabinet, settings, stage, revealedKey, accent, cutaway]);
+  }, [focusKey, settings, stage, revealedKey, accent, cutaway]);
 
   const viewBtn: React.CSSProperties = {
     border: "none",
@@ -148,9 +179,17 @@ export function BuildStepScene({
 
       {!failed && (
         <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", marginTop: 9, fontFamily: font.mono, fontSize: 11, color: color.faint }}>
-          <LegendDot c="#e6a23c" label={`This step · ${stageLabel}`} />
-          <LegendDot c={color.border} label="Already built" />
-          <LegendDot c="transparent" outline label="Still to come" />
+          {isRun ? (
+            // The whole-run render has no per-part glow, so don't imply one — just
+            // say what the run shows at this beat (carcasses joined → frame on).
+            <span>Whole run · {cutaway ? "boxes joined" : "one face frame + fronts fitted"}</span>
+          ) : (
+            <>
+              <LegendDot c="#e6a23c" label={`This step · ${stageLabel}`} />
+              <LegendDot c={color.border} label="Already built" />
+              <LegendDot c="transparent" outline label="Still to come" />
+            </>
+          )}
           <span style={{ flex: 1 }} />
           <span>Drag to orbit · scroll to zoom</span>
         </div>
