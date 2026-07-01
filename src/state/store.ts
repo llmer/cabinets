@@ -46,6 +46,8 @@ interface AppState {
   past: Project[];
   future: Project[];
   toast: string | null;
+  /** Dev live sync is active — the browser is following an agent's MCP edits. */
+  live: boolean;
 
   /* build walkthrough (interaction state — never feeds compute) */
   buildMode: BuildMode;
@@ -82,6 +84,8 @@ interface AppState {
   /* project lifecycle */
   resetProject: () => void;
   loadProjectObj: (p: Project) => void;
+  /** Fold in a project streamed from an external file (dev live sync). */
+  syncProject: (p: Project) => void;
   renameProject: (name: string) => void;
   undo: () => void;
   redo: () => void;
@@ -172,6 +176,7 @@ export const useStore = create<AppState>((set, get) => {
     past: [],
     future: [],
     toast: null,
+    live: false,
 
     buildMode: "overview",
     buildDone: loadBuildProgress(initialProject.id),
@@ -259,6 +264,30 @@ export const useStore = create<AppState>((set, get) => {
         buildCursor: 0,
         buildMode: "overview",
       });
+    },
+    syncProject: (p) => {
+      const s = get();
+      // Ignore a STALE push — e.g. an old live.cabinets.json adopted on browser
+      // connect — that would clobber newer local work. Only apply what's newer.
+      if (p.updatedAt < s.project.updatedAt) return;
+      // Keep the current view + selection where it can, so watching in the 3D tab
+      // doesn't snap back to Layout on every edit.
+      const keepSel = p.cabinets.some((c) => c.id === s.selectedId)
+        ? s.selectedId
+        : p.cabinets[0]?.id ?? null;
+      // In-memory ONLY: deliberately does NOT saveProject(), so the live preview
+      // is ephemeral and a page reload restores the user's OWN localStorage
+      // project rather than an agent's stream. Undo is still pushed for in-session
+      // recovery.
+      set((st) => ({
+        project: p,
+        past: [...st.past, st.project].slice(-HISTORY_LIMIT),
+        future: [],
+        selectedId: keepSel,
+        drafts: {},
+        live: true,
+        toast: "Updated from live file",
+      }));
     },
     renameProject: (name) => apply({ ...get().project, name }, false),
 

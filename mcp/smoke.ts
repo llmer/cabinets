@@ -9,13 +9,22 @@
  * (which is a fast, in-process node run) — it exercises the actual JSON-RPC
  * handshake, tool schemas and transport end to end.
  */
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const maple = resolve(root, "maple-v2.cabinets.json");
+const fixture = resolve(root, "maple-v2.cabinets.json");
+// Work on a throwaway COPY — autosave writes the opened file, so we must never
+// point the test at the committed fixture. Also a throwaway live file.
+const liveDir = mkdtempSync(join(tmpdir(), "cab-smoke-"));
+const liveFile = join(liveDir, "live.cabinets.json");
+const maple = join(liveDir, "maple-copy.cabinets.json");
+const fixtureBefore = readFileSync(fixture, "utf8");
+copyFileSync(fixture, maple);
 
 let failures = 0;
 const results: string[] = [];
@@ -35,6 +44,7 @@ async function main(): Promise<void> {
     args: ["tsx", resolve(root, "mcp/server.ts")],
     cwd: root,
     stderr: "inherit",
+    env: { ...(process.env as Record<string, string>), CABINETS_LIVE_FILE: liveFile },
   });
   const client = new Client({ name: "cabinets-smoke", version: "1.0.0" });
   await client.connect(transport);
@@ -82,6 +92,17 @@ async function main(): Promise<void> {
     arguments: { type: "base", name: "SINK", width: 36, frontStyle: "doors", doorCount: 2 },
   });
   check("add_cabinet appends a base", !add.isError && /Added SINK/.test(textOf(add as never)));
+
+  // implicit autosave: the mutation should have streamed to the live file on disk
+  const liveHasSink = (() => {
+    try {
+      return readFileSync(liveFile, "utf8").includes("SINK");
+    } catch {
+      return false;
+    }
+  })();
+  check("edit autosaved to the live file (no explicit save)", liveHasSink);
+  check("mutation response reports the autosave target", /autosaved/i.test(textOf(add as never)));
 
   const summary2 = textOf((await client.callTool({ name: "project_summary", arguments: {} })) as never);
   check("cabinet count grew to 4 after add", /Cabinets:\s+4/.test(summary2));
@@ -152,7 +173,11 @@ async function main(): Promise<void> {
   const missing = await client.callTool({ name: "get_cabinet", arguments: { cabinet: "ZZZ" } });
   check("get_cabinet on a bad id errors cleanly", missing.isError === true);
 
+  // Autosave must never have touched the committed fixture (we opened a copy).
+  check("the committed fixture is untouched by autosave", readFileSync(fixture, "utf8") === fixtureBefore);
+
   await client.close();
+  rmSync(liveDir, { recursive: true, force: true });
 
   console.log(results.join("\n"));
   console.log(`\n${failures === 0 ? "ALL PASS" : failures + " FAILED"} (${results.length} checks)`);

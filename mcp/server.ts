@@ -45,10 +45,17 @@ import { TOPICS, referenceMarkdown } from "./reference.js";
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 const fail = (t: string) => ({ content: [{ type: "text" as const, text: t }], isError: true });
 
-const session = new CabinetSession();
+// Edits autosave to CABINETS_FILE (if set) and mirror to CABINETS_LIVE_FILE (a
+// dev preview file the Vite plugin watches) — so an agent's work persists
+// implicitly and streams to a running browser. Both are optional.
+const session = new CabinetSession({
+  workingPath: process.env.CABINETS_FILE || null,
+  liveFile: process.env.CABINETS_LIVE_FILE || null,
+});
 
-/** Text appended after a mutation: the fresh one-line headline. */
-const afterChange = (): string => `\n\n→ ${headline(session.model(), session.settings)}`;
+/** Text appended after a mutation: the fresh headline + where it autosaved. */
+const afterChange = (): string =>
+  `\n\n→ ${headline(session.model(), session.settings)}  ·  ${session.persistenceNote()}`;
 
 /* ------------------------------------------------------------------ */
 /* Shared validators                                                   */
@@ -59,6 +66,8 @@ const zFront = z.enum(["doors", "drawers", "door_drawer", "desk", "opening"]);
 const zConstruction = z.enum(["frameless", "framed"]);
 const zOverlay = z.enum(["full", "inset_rail", "inset"]);
 const zRole = z.enum(["carcass", "back", "front", "drawerBox", "drawerBottom", "faceFrame", "base"]);
+/** A filesystem path that must be a .json file (guards against clobbering non-project files). */
+const jsonPath = z.string().min(1).regex(/\.json$/i, "path must end in .json");
 
 /** The editable fields common to add_cabinet / update_cabinet. */
 const cabinetFields = {
@@ -190,7 +199,11 @@ const server = new McpServer(
       ".cabinets.json with `open_project` (or start one with `new_project`), " +
       "shape it with the design tools, sanity-check it with `audit_project`, " +
       "and read the build with `get_cut_list` / `get_build_steps`. Call " +
-      "`explain` for domain terms. Everything is an ESTIMATE — verify before cutting.",
+      "`explain` for domain terms.\n" +
+      "Edits AUTOSAVE — every change writes back to the working file (and, when a " +
+      "dev server is running, streams live to the browser). You do NOT need to call " +
+      "`save_project` while editing; use it only to save-as / export to another path.\n" +
+      "Everything is an ESTIMATE — verify before cutting.",
   },
 );
 
@@ -220,7 +233,7 @@ server.registerTool(
       "Load and migrate a .cabinets.json project from a filesystem path and make it the " +
       "current project. This REPLACES the in-memory project — save_project first if you have " +
       "unsaved changes. Older/partial files are forward-migrated onto current defaults.",
-    inputSchema: { path: z.string().min(1) },
+    inputSchema: { path: jsonPath },
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   async ({ path }) => {
@@ -231,7 +244,7 @@ server.registerTool(
     }
     const a = session.audit();
     return text(
-      `Opened ${session.lastPath}\n\n${summaryText(session.project, session.model())}\n\n` +
+      `Opened ${session.workingPath} · ${session.persistenceNote()}\n\n${summaryText(session.project, session.model())}\n\n` +
         `Audit: ${a.errors} error(s), ${a.warnings} warning(s), ${a.infos} note(s).`,
     );
   },
@@ -242,31 +255,41 @@ server.registerTool(
   {
     title: "New project",
     description:
-      "Start a fresh project, replacing the current one. By default it is seeded with a " +
-      "small example run; pass empty:true for a blank project with no cabinets.",
-    inputSchema: { name: z.string().min(1).optional(), empty: z.boolean().optional() },
-    annotations: RW,
+      "Start a fresh project, DISCARDING the current in-memory one (save_project first if it " +
+      "has unsaved changes). Seeded with a small example run by default; pass empty:true for a " +
+      "blank project. The fresh project is in-memory only until you save — it never overwrites " +
+      "a file you had open. Pass `path` to save it (and autosave there) immediately.",
+    inputSchema: {
+      name: z.string().min(1).optional(),
+      empty: z.boolean().optional(),
+      path: jsonPath.optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
-  async ({ name, empty }) => {
+  async ({ name, empty, path }) => {
     session.loadNew(name, empty ?? false);
-    return text(`Started "${session.project.name}".\n\n${summaryText(session.project, session.model())}`);
+    if (path) session.save(path);
+    return text(
+      `Started "${session.project.name}" · ${session.persistenceNote()}.\n\n${summaryText(session.project, session.model())}`,
+    );
   },
 );
 
 server.registerTool(
   "save_project",
   {
-    title: "Save project to a file",
+    title: "Save-as / export to a file",
     description:
-      "Write the current project to a .cabinets.json path (defaults to the file it was " +
-      "opened from). Overwrites the target file. This is the file the browser app imports.",
-    inputSchema: { path: z.string().min(1).optional() },
+      "Save-as / export the current project to a path. You do NOT need this while editing — " +
+      "edits autosave to the working file. Use it to write a copy to a new path (which then " +
+      "becomes the working file), or with no path to flush the current one. Overwrites the target.",
+    inputSchema: { path: jsonPath.optional() },
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   async ({ path }) => {
     try {
       const written = session.save(path);
-      return text(`Saved ${session.cabinets.length} cabinet(s) to ${written}`);
+      return text(`Saved ${session.cabinets.length} cabinet(s) to ${written} · ${session.persistenceNote()}`);
     } catch (e) {
       return fail((e as Error).message);
     }
@@ -837,6 +860,10 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("frame(less) MCP server ready on stdio.");
+  // Log the RESOLVED absolute paths so a cwd mismatch with the dev server (which
+  // watches CABINETS_LIVE_FILE relative to ITS cwd) is diagnosable.
+  console.error(`  autosave working file: ${session.workingPath ?? "(none — save_project to set one)"}`);
+  console.error(`  live preview file:     ${session.liveFile ?? "(none — set CABINETS_LIVE_FILE for live)"}`);
 }
 
 main().catch((e) => {

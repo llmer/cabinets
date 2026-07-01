@@ -48,6 +48,12 @@ It exposes ~27 tools across four jobs — **design** (`add_cabinet`,
 `get_shopping_list`), and **explain** (`explain`, `list_materials`) — plus
 `cabinets://` resources and one prompt per persona. Full catalog: [`mcp/README.md`](mcp/README.md).
 
+**Live preview.** Edits **autosave** (no explicit save step), and with `npm run
+dev` running, the agent's changes stream into the browser in real time — layout,
+cut list, sheets and 3D update live, no reload. A dev-only Vite plugin watches
+the project file and pushes it over the HMR socket; the production build is
+untouched.
+
 ## Features
 
 **Layout** — front-elevation of the run. Drag boxes to reorder within their band
