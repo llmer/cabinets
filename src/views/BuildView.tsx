@@ -48,6 +48,8 @@ interface FlatStep {
   framed: boolean;
   /** The source cabinet, for the per-step 3D render (absent if it went away). */
   cabinet?: Cabinet;
+  /** For a RUN-level group: the whole run's cabinets, rendered together in 3D. */
+  runCabinets?: Cabinet[];
 }
 
 export function BuildView() {
@@ -76,6 +78,11 @@ export function BuildView() {
       const specs = cp ? drawerBoxSpecs(cp.cabinet, settings) : [];
       const framed = cp?.geometry.framed ?? false;
       const cabinet = cp?.cabinet;
+      // A run-level group (genRunSteps) renders the whole assembled run in 3D.
+      const runCabinets = sg.runCabinetIds?.flatMap((id) => {
+        const m = cabinetParts.find((c) => c.cabinet.id === id);
+        return m ? [m.cabinet] : [];
+      });
       sg.steps.forEach((step, idxInGroup) => {
         out.push({
           gi,
@@ -91,6 +98,7 @@ export function BuildView() {
           specs,
           framed,
           cabinet,
+          runCabinets,
         });
       });
     });
@@ -492,7 +500,7 @@ function GuidedWalkthrough({
             <div style={{ fontSize: 20, lineHeight: 1.5, color: color.ink, paddingTop: 4 }}>{cur.step.t}</div>
           </div>
 
-          {show3d && mounted && cur.cabinet && (
+          {show3d && mounted && (cur.cabinet || (cur.runCabinets && cur.runCabinets.length > 0)) && (
             <Suspense
               fallback={
                 <div
@@ -516,6 +524,7 @@ function GuidedWalkthrough({
             >
               <BuildStepScene
                 cabinet={cur.cabinet}
+                runCabinets={cur.runCabinets}
                 settings={settings}
                 stage={cur.step.stage}
                 revealedStages={flat

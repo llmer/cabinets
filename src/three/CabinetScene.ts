@@ -89,6 +89,7 @@ export class CabinetScene {
   /** When set, the scene renders this single cabinet staged for the build tab. */
   private focus: BuildFocus | null = null;
   private lastFocusId: string | null = null;
+  private lastRunKey: string | null = null;
 
   /** Corner-to-corner measurement overlay (its own group so a model rebuild,
    * which only replaces `group`, leaves an active measurement in place). The
@@ -721,10 +722,34 @@ export class CabinetScene {
 
   setData(cabinets: Cabinet[], settings: Settings, showFronts: boolean, tintCabinets = false) {
     this.focus = null;
+    this.lastRunKey = null;
     this.cabinets = cabinets;
     this.settings = settings;
     this.showFronts = showFronts;
     this.tintCabinets = tintCabinets;
+    this.rebuild();
+  }
+
+  /**
+   * Render the whole assembled RUN for a run-level build step — every box joined
+   * with the ONE continuous face frame drawn across all the joints (reusing the
+   * main whole-run render, so it matches the 3D-view tab and the cut list).
+   * `showFronts` false shows the joined carcasses before the frame + fronts go
+   * on. The view refits once, when the run is first entered, so stepping through
+   * the run's beats keeps a steady viewpoint.
+   */
+  setRunFocus(cabinets: Cabinet[], settings: Settings, showFronts: boolean) {
+    const key = cabinets.map((c) => c.id).join(",");
+    this.focus = null;
+    this.lastFocusId = null;
+    this.cabinets = cabinets;
+    this.settings = settings;
+    this.showFronts = showFronts;
+    this.tintCabinets = false;
+    if (this.lastRunKey !== key) {
+      this.fitted = false; // frame the whole run on first entry
+      this.lastRunKey = key;
+    }
     this.rebuild();
   }
 
@@ -743,6 +768,7 @@ export class CabinetScene {
   ) {
     this.settings = settings;
     this.showFronts = showFronts;
+    this.lastRunKey = null;
     this.focus = { cabinet, stage, revealed: new Set(revealedStages), accent };
     this.rebuild();
   }

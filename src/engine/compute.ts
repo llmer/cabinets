@@ -13,7 +13,7 @@ import { LinearItem, LinearPack, PackRect, StockPack, packLinear, packStock } fr
 import { FrameContext, bandingInchesPerPiece, genParts, mergeParts } from "./parts";
 import { Run, membersSharePartition, runsOf } from "./runs";
 import { genBaseParts, genRunFrameParts } from "./runParts";
-import { StepGroup, genSteps } from "./steps";
+import { StepGroup, genRunSteps, genSteps } from "./steps";
 import { fmtLen } from "./units";
 
 export interface CutPart {
@@ -165,6 +165,15 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
   // Derive the runs once. When a continuous frame is on, each framed bay hands
   // its face frame to the run pass and picks up its wider run opening.
   const runs = runsOf(cabinets, s);
+  // A bay is "run-owned" when it sits in a multi-cabinet continuous framed run:
+  // its box is built individually, but the join, the shared toe-kick base, the
+  // ONE face frame and the inset fronts are all fitted at the run level.
+  const runOf = new Map<string, Run>();
+  for (const run of runs) for (const m of run.members) runOf.set(m.cabinet.id, run);
+  const runOwned = (id: string): boolean => {
+    const r = runOf.get(id);
+    return !!r && s.continuousFaceFrame && r.framed && r.members.length > 1;
+  };
   const frameCtx = new Map<string, FrameContext>();
   if (s.continuousFaceFrame) {
     for (const run of runs) {
@@ -204,7 +213,19 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
       dims: `${fmtLen(c.width, u)} w × ${fmtLen(c.height, u)} h × ${fmtLen(c.depth, u)} d`,
       parts: cutParts,
     });
-    stepGroups.push(genSteps(cp, s, color));
+    stepGroups.push(genSteps(cp, s, color, runOwned(c.id)));
+  });
+
+  // Run-level build steps: after the per-cabinet BOX groups above, one "assemble
+  // the run + fit the ONE face frame + base" group per multi-cabinet continuous
+  // framed run — mirroring the run cut group. Its 3D renders the whole run.
+  runs.forEach((run, ri) => {
+    if (!runOwned(run.members[0].cabinet.id)) return;
+    const memberCPs = run.members.flatMap((m) => {
+      const cp = cabinetParts.find((x) => x.cabinet.id === m.cabinet.id);
+      return cp ? [cp] : [];
+    });
+    if (memberCPs.length) stepGroups.push(genRunSteps(run, memberCPs, s, colorFor(cabinets.length + ri)));
   });
 
   // Run-level pass: the continuous face frame and the separate toe-kick base —
