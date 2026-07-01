@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, makeCabinet, seedCabinets } from "@/domain/defaults";
 import { BUILD_STAGES, BuildStage } from "@/engine/steps";
-import { BuildPart, BuildPartKind, cabinetBuildParts } from "./buildModel";
+import { BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
 
 const S = DEFAULT_SETTINGS;
 
@@ -153,6 +153,26 @@ describe("cabinetBuildParts — lockstep with the run-model face-frame changes",
     // exactly one frame member is faceFrameTop tall — the top rail
     const top = frame1.filter((f) => Math.abs(f.box[3] - f.box[2] - S.faceFrameTop) < 0.01);
     expect(top).toHaveLength(1);
+  });
+
+  it("builds a ladder frame: full-width top + bottom rails, stiles captured between", () => {
+    const ff = S.frameWidth;
+    // the top rail is one board the full width of the box
+    const top = frame1.find((f) => Math.abs(f.box[3] - f.box[2] - S.faceFrameTop) < 0.01)!;
+    expect(top.box[0]).toBeCloseTo(0, 5);
+    expect(top.box[1]).toBeCloseTo(b1.width, 5);
+    // the two stiles (ff wide, at the edges) hang beneath it and rest on the
+    // bottom rail — their top is the rail's underside, their foot box bottom + ff
+    const stiles = frame1.filter((f) => Math.abs(f.box[1] - f.box[0] - ff) < 0.01);
+    expect(stiles).toHaveLength(2);
+    const yB = buildBaseY(b1, S);
+    for (const st of stiles) {
+      expect(st.box[3]).toBeCloseTo(top.box[2], 5); // butts under the top rail
+      expect(st.box[2]).toBeCloseTo(yB + ff, 5); // foot rests on the bottom rail
+    }
+    // the bottom rail is also full width, its top flush with the stile feet
+    const bottom = frame1.find((f) => f !== top && Math.abs(f.box[1] - f.box[0] - b1.width) < 0.01)!;
+    expect(bottom.box[3]).toBeCloseTo(yB + ff, 5);
   });
 
   it("drops the face frame AND the end panels to the frame-floor gap over a toe kick", () => {

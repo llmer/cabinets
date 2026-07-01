@@ -155,9 +155,11 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   // Its frame runs to the floor (frameBottom) with the wider top rail.
   if (opening) {
     if (framed) {
-      push("faceFrame", "frame", 0, ff, frameBottom, yT, fz0, fz1);
-      push("faceFrame", "frame", x1 - ff, x1, frameBottom, yT, fz0, fz1);
-      push("faceFrame", "frame", ff, x1 - ff, yT - topRail, yT, fz0, fz1);
+      // Continuous top rail; the two stiles hang beneath it to the floor (no
+      // bottom rail — the opening stays open).
+      push("faceFrame", "frame", 0, x1, yT - topRail, yT, fz0, fz1);
+      push("faceFrame", "frame", 0, ff, frameBottom, yT - topRail, fz0, fz1);
+      push("faceFrame", "frame", x1 - ff, x1, frameBottom, yT - topRail, fz0, fz1);
     }
     return out;
   }
@@ -183,12 +185,16 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   if (framed) {
     const zf1 = isInset(c) ? fz1 : fz0;
     const zf0 = zf1 - FRONT_T;
-    push("faceFrame", "frame", 0, ff, frameBottom, yT, zf0, zf1); // left stile
-    push("faceFrame", "frame", x1 - ff, x1, frameBottom, yT, zf0, zf1); // right stile
-    push("faceFrame", "frame", ff, x1 - ff, yT - topRail, yT, zf0, zf1); // top rail (wider)
-    // Closed boxes get a bottom rail; over a toe kick it grows down to the frame
-    // line. A desk has no bottom rail — its knee stays open (deck closes it).
-    if (!desk) push("faceFrame", "frame", ff, x1 - ff, frameBottom, yB + ff, zf0, zf1);
+    // Ladder frame: one continuous top rail and (closed boxes) one continuous
+    // bottom rail run the full width; the stiles are captured between them. Over
+    // a toe kick the bottom rail grows down to the frame line. A desk has no
+    // bottom rail — its knee stays open (the deck closes it) — so its stiles run
+    // on down under the top rail.
+    const stileFoot = desk ? frameBottom : yB + ff;
+    push("faceFrame", "frame", 0, x1, yT - topRail, yT, zf0, zf1); // top rail (wider)
+    if (!desk) push("faceFrame", "frame", 0, x1, frameBottom, yB + ff, zf0, zf1); // bottom rail
+    push("faceFrame", "frame", 0, ff, stileFoot, yT - topRail, zf0, zf1); // left stile
+    push("faceFrame", "frame", x1 - ff, x1, stileFoot, yT - topRail, zf0, zf1); // right stile
   }
 
   if (isInset(c)) {

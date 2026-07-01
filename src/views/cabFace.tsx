@@ -212,9 +212,6 @@ function insetFace(
       <div style={{ position: "absolute", top: "44%", left: "50%", width: 2, height: "12%", background: "rgba(31,20,14,.5)", transform: "translateX(-50%)", borderRadius: 1 }} />
     </div>
   );
-  const railEnd = (key: string, px: number = ffpx) => (
-    <div key={key} style={{ flex: "0 0 " + px + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
-  );
   const railMid = (key: string) => (
     <div key={key} style={{ flex: "0 0 " + railpx + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
   );
@@ -254,20 +251,28 @@ function insetFace(
     mods = hs.map((dh, i) => drawerMod("m" + i, dh));
     mods.push(openMod("open", Math.max(1, boxHeight(c, s) - sum)));
   }
-  const col: ReactNode[] = [railEnd("top", topPx)];
+  // Ladder frame: continuous top (and, unless a desk, bottom) rails own the full
+  // width; the stiles are captured between them, and the openings + mid rails
+  // fill the column between the stiles.
+  const hasBottom = fs !== "desk";
+  const col: ReactNode[] = [];
   mods.forEach((m, i) => {
     if (i > 0) col.push(railMid("r" + i));
     col.push(m);
   });
-  // A desk has no bottom rail — its knee is open to the floor.
-  if (fs !== "desk") col.push(railEnd("bot"));
+  const railBar = (key: string, edge: "top" | "bottom", px: number) => (
+    <div
+      key={key}
+      style={{ position: "absolute", left: 0, right: 0, [edge]: 0, height: px, background: FRAME_BG } as CSSProperties}
+    />
+  );
   const stile = (side: "left" | "right") => (
     <div
       key={side}
       style={{
         position: "absolute",
-        top: 0,
-        bottom: 0,
+        top: topPx,
+        bottom: hasBottom ? ffpx : 0,
         [side]: 0,
         width: side === "left" ? leftFfpx : rightFfpx,
         background: FRAME_BG,
@@ -277,9 +282,11 @@ function insetFace(
   );
   return (
     <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: tkPx }}>
+      {railBar("top", "top", topPx)}
+      {hasBottom && railBar("bot", "bottom", ffpx)}
       {stile("left")}
       {stile("right")}
-      <div style={{ position: "absolute", top: 0, bottom: 0, left: leftFfpx, right: rightFfpx, display: "flex", flexDirection: "column" }}>{col}</div>
+      <div style={{ position: "absolute", top: topPx, bottom: hasBottom ? ffpx : 0, left: leftFfpx, right: rightFfpx, display: "flex", flexDirection: "column" }}>{col}</div>
     </div>
   );
 }
@@ -296,8 +303,9 @@ function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings, ends: R
   const rightFfpx = ends.rightEnd ? ffpx : Math.max(1.5, ffpx / 2);
   const kids: ReactNode[] = [];
   if (framed) {
-    kids.push(<div key="sl" style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: leftFfpx, background: FRAME_BG }} />);
-    kids.push(<div key="sr" style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: rightFfpx, background: FRAME_BG }} />);
+    // Continuous top rail; the two stiles hang beneath it to the floor.
+    kids.push(<div key="sl" style={{ position: "absolute", top: topPx, bottom: 0, left: 0, width: leftFfpx, background: FRAME_BG }} />);
+    kids.push(<div key="sr" style={{ position: "absolute", top: topPx, bottom: 0, right: 0, width: rightFfpx, background: FRAME_BG }} />);
     kids.push(<div key="tr" style={{ position: "absolute", top: 0, left: 0, right: 0, height: topPx, background: FRAME_BG }} />);
   }
   const pad = framed ? ffpx : 5;

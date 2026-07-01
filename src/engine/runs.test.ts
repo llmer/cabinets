@@ -83,20 +83,23 @@ describe("genRunFrameParts — continuous frame", () => {
     const stiles = genRunFrameParts(run, S).filter((p) => p.name === "Face-frame stile");
     expect(stiles).toHaveLength(4); // 3 bays → 4 stiles (was 6 with per-box frames)
     expect(stiles.every((p) => p.width === 1.5 && p.linear)).toBe(true);
-    // left end stops at B1's toe kick (3.25 off floor) → 31.25; the stiles around
-    // the appliance opening and desk run to the floor → 34.5.
-    expect(stiles.map((p) => p.length).sort((a, b) => a - b)).toEqual([31.25, 34.5, 34.5, 34.5]);
+    // Captured between the rails: every stile tops out under the 2" top rail
+    // (34.5 − 2 = 32.5). B1's end stile rests on its bottom rail at box bottom +
+    // a rail width (4.5 + 1.5 = 6) → 26.5; the stiles beside the open appliance
+    // and desk bays have no bottom rail, so they run to the floor → 32.5.
+    expect(stiles.map((p) => p.length).sort((a, b) => a - b)).toEqual([26.5, 32.5, 32.5, 32.5]);
   });
 
   it("widens each bay's opening at shared joints (half a stile, not a full one)", () => {
     expect(run.members.map((m) => m.openingWidth)).toEqual([27.75, 16.5, 21.75]);
   });
 
-  it("makes the top rail 2 inches — wider than the 1.5 inch stiles", () => {
+  it("runs ONE continuous top rail across the whole run, 2 inches wide", () => {
     const parts = genRunFrameParts(run, S);
     const tops = parts.filter((p) => p.name === "Face-frame top rail");
-    expect(tops).toHaveLength(3); // one per bay
-    expect(tops.every((p) => p.width === 2)).toBe(true);
+    expect(tops).toHaveLength(1); // one long board, not one per bay
+    expect(tops[0].length).toBe(72); // the full run width (30 + 18 + 24)
+    expect(tops[0].width).toBe(2); // wider than the 1.5" stiles
     expect(parts.filter((p) => p.name === "Face-frame stile").every((p) => p.width === 1.5)).toBe(true);
   });
 
@@ -105,13 +108,15 @@ describe("genRunFrameParts — continuous frame", () => {
     expect(run.frameTop).toBe(34.5);
   });
 
-  it("gives the toe-kicked bay a taller bottom rail; the open bays none", () => {
+  it("gives the toe-kicked bay a taller continuous bottom rail; the open bays none", () => {
     const parts = genRunFrameParts(run, S);
     const bottoms = parts.filter((p) => p.name === "Face-frame bottom rail");
     // only B1 is a closed cabinet → one bottom rail; B2 (opening) and B3 (desk)
     // stay open at the floor
     expect(bottoms).toHaveLength(1);
-    expect(bottoms[0].length).toBe(27.75); // B1 opening
+    // owns its corners: from the run's left edge (0, under the end stile) to the
+    // B1|B2 joint stile it butts into (B1.openingLeft 1.5 + opening 27.75 = 29.25)
+    expect(bottoms[0].length).toBe(29.25);
     expect(bottoms[0].width).toBe(2.75); // yB 4.5 + ff 1.5 − frameBottom 3.25
     // the desk still gets a rail UNDER its drawer (1 drawer → 1 mid rail)
     const deskMid = parts.filter((p) => p.name === "Face-frame mid rail" && p.length === 21.75);
@@ -194,7 +199,7 @@ describe("compute — continuous frame integration", () => {
     expect(side.qty).toBe(1); // the interior side (abuts B2) stays at box height
     expect(side.length).toBe(30);
     expect(end.qty).toBe(1); // the exposed left end, taller
-    expect(end.length).toBe(31.25); // boxTop 34.5 − frameBottom 3.25 = the stile length
+    expect(end.length).toBe(31.25); // boxTop 34.5 − frameBottom 3.25 (drops to the frame line)
     // a floor-standing run end (B3 desk) already reaches the floor → no end panel
     const b3 = m.cabinetParts.find((cp) => cp.cabinet.name === "B3")!;
     expect(b3.parts.some((p) => p.name === "End panel")).toBe(false);

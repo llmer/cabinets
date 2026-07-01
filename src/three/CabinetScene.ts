@@ -9,6 +9,7 @@ import {
   insetStackGap,
   isFramed,
   isInset,
+  isOpenBox,
   isRailInset,
 } from "@/engine/geometry";
 import { getDrawerHeights } from "@/engine/drawers";
@@ -335,10 +336,12 @@ export class CabinetScene {
   }
 
   /**
-   * Draw a bay's two face-frame stiles. In a continuous run each shared joint is
-   * ONE box centred on the joint, owned by the LEFT bay (it overhangs a
-   * half-stile into the next bay, whose left stile is therefore not drawn). That
-   * makes the run frame one seamless piece — only the run ends get an end stile.
+   * Draw a bay's two face-frame stiles, captured between the continuous top and
+   * bottom rails (`y1` is the stile top — the underside of the top rail). In a
+   * continuous run each shared joint is ONE box centred on the joint, owned by
+   * the LEFT bay (it overhangs a half-stile into the next bay, whose left stile
+   * is therefore not drawn), so the joint carries one seamless stile — only the
+   * run ends get an end stile.
    */
   private addFrameStiles(
     x0: number,
@@ -403,12 +406,19 @@ export class CabinetScene {
 
     // Per-bay frame bottom: a toe-kicked bay stops at the toe-kick line, a
     // floor-standing bay (appliance opening / desk) runs its frame to the floor.
-    // A shared joint stile takes the LOWER of the two bays it borders.
+    const frameFF = S.frameWidth || 1.5;
     const bayFB = continuous && rm ? rm.frameBottom : yB;
     const ri = run && rm ? run.members.indexOf(rm) : -1;
-    const nextFB = ri >= 0 && run && run.members[ri + 1] ? run.members[ri + 1].frameBottom : bayFB;
-    const leftStileBot = bayFB;
-    const rightStileBot = continuous && rm && !rm.rightEnd ? Math.min(bayFB, nextFB) : bayFB;
+    // Stiles are captured between the rails: a closed bay's stile rests on its
+    // bottom rail (box bottom + a rail width); an open bay (appliance opening /
+    // desk) has no bottom rail, so the stile runs to the floor. A shared joint
+    // stile takes the LOWER foot of the two bays it borders.
+    const footOf = (m: RunMember) => (isOpenBox(m.cabinet) ? m.frameBottom : m.yB + frameFF);
+    const thisFoot = openBox ? bayFB : yB + frameFF;
+    const rn = ri >= 0 && run ? run.members[ri + 1] : undefined;
+    const rightFoot = rn ? footOf(rn) : thisFoot;
+    const leftStileBot = thisFoot;
+    const rightStileBot = continuous && rm && !rm.rightEnd ? Math.min(thisFoot, rightFoot) : thisFoot;
 
     // An exposed end of a face-frame run drops its end panel to the frame
     // bottom, so from the side the panel lines up with the face frame.
@@ -482,15 +492,24 @@ export class CabinetScene {
       return;
     }
 
+    // ONE continuous top rail across a framed run: drawn once, on the first bay,
+    // spanning run.x0..run.x1, so the top reads as a single board with no per-bay
+    // seams (matches genRunFrameParts). Non-continuous frames draw a bay-width
+    // rail in the branches below.
+    if (continuous && run && rm?.leftEnd) {
+      const ftop = S.faceFrameTop || 2;
+      this.addBox(run.x0, run.x1, run.frameTop - ftop, run.frameTop, ffz0, ffz1, fm);
+    }
+
     // Appliance opening: no front — just the face-frame surround when framed.
     if (opening) {
       if (framed) {
         const ff = S.frameWidth || 1.5;
         const ftop = S.faceFrameTop || 2;
-        const ffL = continuous && rm ? (rm.leftEnd ? ff : ff / 2) : ff;
-        const ffR = continuous && rm ? (rm.rightEnd ? ff : ff / 2) : ff;
-        this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
-        this.addBox(x0 + ffL, x1 - ffR, yT - ftop, yT, ffz0, ffz1, fm);
+        // Top rail is the continuous run board (drawn above); a solo opening draws
+        // its own bay-width rail. Stiles are captured beneath it either way.
+        if (!continuous) this.addBox(x0, x1, yT - ftop, yT, ffz0, ffz1, fm);
+        this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT - ftop, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
       }
       return;
     }
@@ -520,14 +539,17 @@ export class CabinetScene {
       const rl = x0 + ffL;
       const rr = x1 - ffR;
       if (framed) {
-        // visible hardwood frame perimeter (one continuous frame across the run:
-        // shared joint stiles are single seamless boxes, owned by the left bay),
-        // sat proud of the carcass (ffz*) so the overlap never z-fights.
-        this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
-        this.addBox(rl, rr, yT - ftop, yT, ffz0, ffz1, fm);
-        // Bottom rail spans from the lower of (this bay's frame bottom, box
-        // bottom) up to the opening — a desk has no bottom rail (open knee).
-        if (!desk) this.addBox(rl, rr, Math.min(bayFB, yB), yB + ff, ffz0, ffz1, fm);
+        // Ladder frame: continuous top + bottom rails run the full bay width
+        // (abutting the neighbours into one seamless run) with the stiles
+        // captured between them, sat proud of the carcass (ffz*) so the overlap
+        // never z-fights. The shared joint stile is one seamless box owned by the
+        // left bay; over a toe kick the bottom rail grows down to the frame line.
+        // A desk has no bottom rail (open knee).
+        // Top rail: the continuous run board (drawn once above) in a run, else a
+        // bay-width rail. Bottom rail still per bay (abuts its neighbours).
+        if (!continuous) this.addBox(x0, x1, yT - ftop, yT, ffz0, ffz1, fm);
+        if (!desk) this.addBox(x0, x1, bayFB, yB + ff, ffz0, ffz1, fm);
+        this.addFrameStiles(x0, x1, leftStileBot, rightStileBot, yT - ftop, ffz0, ffz1, fm, ff, !!rm?.leftEnd, !!rm?.rightEnd, continuous);
       }
       // Inset fronts sit flush with the frame / box face, a hair proud-recessed.
       const iz0 = fz0;

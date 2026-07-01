@@ -148,22 +148,26 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
   const inset = isInset(c);
 
   if (c.frontStyle === "opening") {
-    // APPLIANCE OPENING: no front. In framed mode, surround the bay.
+    // APPLIANCE OPENING: no front. In framed mode, surround the bay with a
+    // continuous top rail and two stiles hung beneath it (no bottom rail — the
+    // opening stays open to the floor).
     if (framed && frame.emitFaceFrame) {
-      add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
-      add("Face-frame top rail", 1, r3(W - 2 * ff), top, "faceFrame", "none");
+      add("Face-frame top rail", 1, W, top, "faceFrame", "none");
+      add("Face-frame stile", 2, r3(boxH - top), ff, "faceFrame", "none");
     }
   } else {
-    // FACE-FRAME stock — solid hardwood (not nested). Mid rails only divide
-    // inset openings; full-overlay fronts span a single opening.
+    // FACE-FRAME stock — solid hardwood (not nested). The top and bottom rails
+    // are single continuous boards the full width of the box; the stiles are
+    // captured between them. Mid rails only divide inset openings.
     if (framed && frame.emitFaceFrame) {
-      const railLen = r3(W - 2 * ff);
-      add("Face-frame stile", 2, boxH, ff, "faceFrame", "none");
-      add("Face-frame top rail", 1, railLen, top, "faceFrame", "none");
+      const midLen = r3(W - 2 * ff); // mid rails fit between the stiles
       // A desk has no bottom rail — its knee stays open to the floor (it gets a
-      // deck panel + a rail under the drawer instead, below).
-      if (c.frontStyle !== "desk")
-        add("Face-frame bottom rail", 1, railLen, ff, "faceFrame", "none");
+      // deck panel + a rail under the drawer instead, below) — so its stiles run
+      // on down under the top rail.
+      const hasBottom = c.frontStyle !== "desk";
+      add("Face-frame top rail", 1, W, top, "faceFrame", "none");
+      if (hasBottom) add("Face-frame bottom rail", 1, W, ff, "faceFrame", "none");
+      add("Face-frame stile", 2, r3(boxH - top - (hasBottom ? ff : 0)), ff, "faceFrame", "none");
       const mid = !inset
         ? 0
         : c.frontStyle === "drawers"
@@ -173,7 +177,7 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
             : c.frontStyle === "door_drawer"
               ? 1
               : 0;
-      if (mid > 0) add("Face-frame mid rail", mid, railLen, ff, "faceFrame", "none");
+      if (mid > 0) add("Face-frame mid rail", mid, midLen, ff, "faceFrame", "none");
     }
 
     // Frameless railed inset — a 3/4" rail between every stacked face (no stiles;

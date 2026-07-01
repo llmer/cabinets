@@ -1,6 +1,6 @@
 import { Part, Role, Settings } from "@/domain/types";
 import { isInset, isOpenBox } from "./geometry";
-import { Run, baseSegments } from "./runs";
+import { Run, RunMember, baseSegments } from "./runs";
 import { r3 } from "./units";
 
 /** A plain (un-banded) part on a given role's stock. */
@@ -26,55 +26,101 @@ function mkPart(
 }
 
 /**
- * The ONE continuous face frame skinned across a run: shared stiles at every
- * joint (members + 1, not 2·members), a top rail per bay, a bottom rail per
- * closed bay (taller where it drops over a toe kick), and inset mid rails. Same
+ * The ONE continuous face frame skinned across a run, built as a ladder: ONE
+ * long top rail and ONE long bottom rail (per closed span) run the whole width,
+ * and the shared stiles (members + 1, not 2·members) are captured BETWEEN them.
+ * A stile rests on its bottom rail where both bays it borders are closed, and
+ * runs on down to the floor beside an open bay (which has no bottom rail). Same
  * part NAMES as the per-cabinet frame, so the cut list / steps treat them
- * identically; lengths key off each bay's run opening, so the doubled joint
- * stiles collapse to one.
+ * identically; mid-rail lengths key off each bay's run opening.
  */
 export function genRunFrameParts(run: Run, s: Settings): Part[] {
   if (!run.framed) return [];
   const ff = s.frameWidth || 1.5;
+  const topRail = s.faceFrameTop || 2; // the (wider) top rail across a framed run
+  const ms = run.members;
   const parts: Part[] = [];
   const add = (name: string, qty: number, length: number, width: number) =>
     parts.push(mkPart(name, qty, length, width, "faceFrame", s));
 
-  // Shared stiles — one between every pair of bays, plus the two run ends. Each
-  // stile runs down to the LOWER frame bottom of the two bays it borders, so a
-  // stile beside an appliance opening / desk reaches the floor.
-  const ms = run.members;
+  // ONE continuous top rail across the whole run — the top of the frame is a
+  // single long board, and every stile hangs beneath it.
+  const stileTop = r3(run.frameTop - topRail);
+  add("Face-frame top rail", 1, r3(run.x1 - run.x0), topRail);
+
+  // Continuous bottom rails — one long board per contiguous span of closed bays
+  // that share a box + frame bottom (so a single board's height and position are
+  // uniform). Open bays (appliance opening / desk knee) break the span and take
+  // no bottom rail; over a toe kick the board grows down to the frame bottom.
+  for (const seg of bottomRailSegments(ms)) {
+    const first = seg[0];
+    const last = seg[seg.length - 1];
+    // Own the corners: at a run end the rail reaches the frame edge (the end
+    // stile sits on it); against an open bay it butts into the full-height stile.
+    const segLeft = first.leftEnd ? run.x0 : first.openingLeft;
+    const segRight = last.rightEnd ? run.x1 : r3(last.openingLeft + last.openingWidth);
+    add(
+      "Face-frame bottom rail",
+      1,
+      r3(segRight - segLeft),
+      r3(ff + Math.max(0, first.yB - first.frameBottom)),
+    );
+  }
+
+  // Shared stiles — one between every pair of bays, plus the two run ends —
+  // captured between the rails. Each rests on the higher of its two neighbours'
+  // rail feet: a closed bay's stile sits on its bottom rail (box bottom + a rail
+  // width); an open bay has none, so the stile runs on down to the floor.
+  const sideFoot = (m: RunMember): number =>
+    isOpenBox(m.cabinet) ? m.frameBottom : r3(m.yB + ff);
   for (let i = 0; i <= ms.length; i++) {
     const left = ms[i - 1];
     const right = ms[i];
-    const bottom = Math.min(left?.frameBottom ?? Infinity, right?.frameBottom ?? Infinity);
-    add("Face-frame stile", 1, run.frameTop - bottom, ff);
+    const foot = Math.min(left ? sideFoot(left) : Infinity, right ? sideFoot(right) : Infinity);
+    add("Face-frame stile", 1, r3(stileTop - foot), ff);
   }
 
-  const topRail = s.faceFrameTop || 2; // the (wider) top rail across a framed run
+  // Inset mid rails still fit between the stiles at each bay's opening.
   for (const m of run.members) {
     const c = m.cabinet;
-    const ow = m.openingWidth;
-    add("Face-frame top rail", 1, ow, topRail);
-    // Closed bays get a bottom rail; over a toe kick it grows down to this bay's
-    // frame bottom. Open boxes (appliance opening, desk knee) stay open at the
-    // floor — a desk closes its drawer cavity with a deck panel instead.
-    if (!isOpenBox(c)) {
-      add("Face-frame bottom rail", 1, ow, r3(ff + Math.max(0, m.yB - m.frameBottom)));
-    }
-    if (isInset(c)) {
-      const mid =
-        c.frontStyle === "drawers"
-          ? c.drawerCount - 1
-          : c.frontStyle === "desk"
-            ? c.drawerCount // a rail between drawers PLUS one under the drawer
-            : c.frontStyle === "door_drawer"
-              ? 1
-              : 0;
-      if (mid > 0) add("Face-frame mid rail", mid, ow, ff);
-    }
+    if (!isInset(c)) continue;
+    const mid =
+      c.frontStyle === "drawers"
+        ? c.drawerCount - 1
+        : c.frontStyle === "desk"
+          ? c.drawerCount // a rail between drawers PLUS one under the drawer
+          : c.frontStyle === "door_drawer"
+            ? 1
+            : 0;
+    if (mid > 0) add("Face-frame mid rail", mid, m.openingWidth, ff);
   }
   return parts;
+}
+
+/**
+ * Contiguous spans of closed bays that share a box + frame bottom — one
+ * continuous bottom rail each. Open bays break a span (they carry no bottom
+ * rail), and a change in box/frame bottom (a floor-standing bay beside a
+ * toe-kicked one) starts a fresh board so each rail stays a single height.
+ */
+function bottomRailSegments(ms: RunMember[]): RunMember[][] {
+  const segs: RunMember[][] = [];
+  let cur: RunMember[] = [];
+  const flush = () => {
+    if (cur.length) segs.push(cur);
+    cur = [];
+  };
+  for (const m of ms) {
+    if (isOpenBox(m.cabinet)) {
+      flush();
+      continue;
+    }
+    const prev = cur[cur.length - 1];
+    if (prev && (prev.yB !== m.yB || prev.frameBottom !== m.frameBottom)) flush();
+    cur.push(m);
+  }
+  flush();
+  return segs;
 }
 
 /**

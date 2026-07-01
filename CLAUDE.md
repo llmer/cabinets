@@ -86,8 +86,10 @@ add a golden-value test next to it (`*.test.ts` colocated in `src/engine/`).
 ### Runs — the unit that owns shared structure
 
 Cabinets are independent boxes, but a real kitchen joins contiguous ones into a
-**run** that shares ONE continuous face frame (shared stiles at every joint,
-rails per bay) and ONE toe-kick base. A run is **derived, never stored**:
+**run** that shares ONE continuous face frame — a **ladder**: one long top rail
+and one long bottom rail (per closed span) span the whole run, with the shared
+stiles captured between them at every joint — and ONE toe-kick base. A run is
+**derived, never stored**:
 `runs.ts:runsOf(cabinets, s)` walks each lane (base/tall vs wall) in array order
 — mirroring the renderers' `bx += c.width` — and breaks at a `Cabinet.runBreak`,
 or a type/height/depth/construction change. The only persisted hint is the
@@ -95,8 +97,10 @@ per-cabinet `runBreak` escape hatch (corner / appliance gap / island), editable
 in the cabinet editor.
 
 `compute()` runs a per-cabinet pass then a **run-level pass**: `runParts.ts`
-emits the continuous frame (`genRunFrameParts`: `members+1` shared stiles, a
-per-bay bottom rail that grows down to `faceFrameFloorGap` over a toe kick) and
+emits the continuous frame (`genRunFrameParts`: ONE full-run top rail, ONE bottom
+rail per contiguous closed span — growing down to `faceFrameFloorGap` over a toe
+kick — and `members+1` shared stiles captured between the rails, each resting on
+its bottom rail or running to the floor beside an open bay) and
 the separate base (`genBaseParts`: a ply ladder + recessed fascia + side returns
 per contiguous toe-kicked segment). Both feed the SAME accumulators via an
 extracted `ingestPart()` and appear as synthetic `"Run"` cut groups. Toggled by

@@ -118,6 +118,14 @@ describe("genParts — face frame, inset", () => {
     expect(find(parts, "Face-frame bottom rail")!.width).toBe(1.5);
   });
 
+  it("cuts both rails full-width and captures the stiles between them", () => {
+    // ladder frame: the top and bottom rails run the full box width...
+    expect(find(parts, "Face-frame top rail")!.length).toBe(24);
+    expect(find(parts, "Face-frame bottom rail")!.length).toBe(24);
+    // ...and the stiles are shortened to fit between them: boxH 30 − top 2 − bottom 1.5
+    expect(find(parts, "Face-frame stile")!.length).toBe(26.5);
+  });
+
   it("sizes inset doors inside the opening", () => {
     const door = find(parts, "Door")!;
     // opening width 24 - 2*1.5 = 21; doorW = (21 - 0.125*3)/2 = 10.3125 -> r3 10.313
