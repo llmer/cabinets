@@ -10,3 +10,4 @@ export * from "./cost";
 export * from "./steps";
 export * from "./labels";
 export * from "./compute";
+export * from "./audit";
