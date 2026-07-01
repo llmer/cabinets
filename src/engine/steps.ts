@@ -198,7 +198,10 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
     // run frame the stiles/rails are emitted once at the run level, so this box
     // carries none — but the walkthrough still narrates milling its section.
     const ffw = s.frameWidth || 1.5;
-    const railLen = c.width - 2 * ffw;
+    const ffTop = s.faceFrameTop || 2;
+    const railLen = c.width; // top + bottom rails run the full width of the box
+    const midLen = c.width - 2 * ffw; // mid rails fit between the captured stiles
+    const stileLen = Math.max(0, g.boxHeight - ffTop - (g.openBox ? 0 : ffw));
     const ffStiles = 2;
     const midRails = g.inset
       ? c.frontStyle === "drawers"
@@ -209,15 +212,16 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
             ? 1
             : 0
       : 0;
-    // top + bottom (none on a desk — open knee) + the mid rails
-    const ffRails = 1 + (g.openBox ? 0 : 1) + midRails;
-    const ffl = Math.ceil((ffStiles * g.boxHeight + ffRails * railLen) / 12);
+    // one continuous top rail + a bottom rail (none on an open box — open knee) +
+    // the mid rails
+    const fullRails = 1 + (g.openBox ? 0 : 1);
+    const ffl = Math.ceil((ffStiles * stileLen + fullRails * railLen + midRails * midLen) / 12);
     push(
-      `Cut ~${ffl} ft of 3/4" hardwood into ${ffStiles} stile${ffStiles > 1 ? "s" : ""} and ${ffRails} rail${ffRails > 1 ? "s" : ""} — ${fmtLen(ffw, u)} wide (${fmtLen(s.faceFrameTop || 2, u)} top rail), each sized to the front of the box.`,
+      `Cut ~${ffl} ft of 3/4" hardwood into one continuous top rail${g.openBox ? "" : " and bottom rail"} the full width of the box, ${ffStiles} stiles and ${midRails} mid rail${midRails === 1 ? "" : "s"} — ${fmtLen(ffw, u)} wide (${fmtLen(ffTop, u)} top rail).`,
       "faceFrame",
     );
     push(
-      "Pocket-screw the stiles and rails into one flat face frame on the bench, checking it for square as you clamp.",
+      "Pocket-screw the frame on the bench: the long rails run the full width and the stiles are captured between them — check it for square as you clamp.",
       "faceFrame",
     );
     push(
