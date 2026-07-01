@@ -255,6 +255,26 @@ describe("genParts — open boxes", () => {
     expect(find(parts, "Side panel")!.width).toBe(c.depth);
   });
 
+  it("opening: a base surround adds top + bottom back stretchers to stiffen the open box", () => {
+    const c = makeCabinet("base", "B", { width: 33, frontStyle: "opening" });
+    const { parts } = genParts(c, noBoxes);
+    for (const name of ["Back stretcher", "Back bottom stretcher"]) {
+      const back = find(parts, name)!;
+      expect(back).toBeTruthy();
+      expect(back.qty).toBe(1);
+      expect(back.length).toBe(31.5); // interior width: 33 - 2*0.75
+      expect(back.width).toBe(4); // same 4" as the top stretchers
+      expect(back.role).toBe("carcass");
+    }
+  });
+
+  it("opening: a tall (full-top) surround has no back stretcher", () => {
+    const c = makeCabinet("tall", "T", { width: 33, frontStyle: "opening" });
+    const { parts } = genParts(c, noBoxes);
+    expect(find(parts, "Top")).toBeTruthy();
+    expect(find(parts, "Back stretcher")).toBeUndefined();
+  });
+
   it("desk: open knee space, drawer fronts on top", () => {
     const c = makeCabinet("base", "B", {
       frontStyle: "desk",
@@ -265,6 +285,9 @@ describe("genParts — open boxes", () => {
     expect(find(parts, "Bottom")).toBeUndefined();
     expect(find(parts, "Back (applied)")).toBeUndefined();
     expect(find(parts, "Drawer front")).toBeTruthy();
+    // the open knee gets the same back stretchers as the appliance opening
+    expect(find(parts, "Back stretcher")!.width).toBe(4);
+    expect(find(parts, "Back bottom stretcher")!.width).toBe(4);
   });
 
   it("framed desk: a deck closes the drawer cavity + a rail under the drawer", () => {

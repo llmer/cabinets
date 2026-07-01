@@ -114,6 +114,14 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   } else {
     push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, cd);
   }
+  // Open box (appliance opening / desk knee): a pair of back stretchers on edge
+  // (at the back, z≈0) stiffen the open surround — one under the top rear
+  // stretcher, one across the back at floor level (no back/bottom keeps it
+  // square; the bottom one also nails to the wall).
+  if (openBox && c.type === "base") {
+    push("carcass", "carcass", matT, x1 - matT, yT - matT - 4, yT - matT, 0, matT);
+    push("carcass", "carcass", matT, x1 - matT, yB, yB + 4, 0, matT);
+  }
   // applied back — squares the closed box
   if (!openBox) push("back", "back", matT, x1 - matT, yB, yT, 0, backT);
   // desk writing surface, capping the open box (not a nested cut-list part)

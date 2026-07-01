@@ -95,13 +95,15 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
 
   if (c.frontStyle === "opening") {
     push(
-      `Cut the 2 side panels and the top${c.type === "base" ? " stretchers" : " panel"} for the surround.`,
+      `Cut the 2 side panels and the top${c.type === "base" ? " stretchers plus two back stretchers" : " panel"} for the surround.`,
       "sides",
     );
     if (bandFt > 0)
       push(`Edge-band the exposed front edges (about ${bandFt} ft) and trim flush.`, "sides");
     push(
-      `${c.type === "base" ? "Join the top stretchers" : "Join the top panel"} between the side panels. There is no bottom, back or front — the appliance slides into the open bay.`,
+      c.type === "base"
+        ? "Join the two top stretchers between the side panels, then set the two back stretchers on edge — one just under the rear top stretcher and one across the back at floor level. They tie the sides together and keep the open surround from racking; the bottom one also gives you a rail to screw to the wall studs. There is no bottom or front; the appliance slides into the open bay."
+        : "Join the top panel between the side panels. There is no bottom, back or front — the appliance slides into the open bay.",
       "carcass",
     );
     if (g.framed)
@@ -134,7 +136,7 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
 
   if (c.frontStyle === "desk") {
     push(
-      'Join the two 4" top stretchers between the side panels (glue + confirmat screws). There is no bottom and no back — the knee space stays open, so the desktop plus a corner brace keep it square.',
+      'Join the two 4" top stretchers between the side panels, then set two back stretchers on edge — one just under the rear top stretcher and one across the back at floor level (glue + confirmat screws). They tie the sides together and stiffen the open box. There is no bottom; the knee space stays open, and the desktop caps the top to keep it square.',
       "carcass",
     );
     if (g.framed)

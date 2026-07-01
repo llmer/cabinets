@@ -334,6 +334,14 @@ export class CabinetScene {
     } else {
       this.addBox(x0 + matT, x1 - matT, yT - matT, yT, 0, cd, carcass);
     }
+    // Open box (appliance opening / desk knee): a pair of back stretchers on
+    // edge (at the back, z≈0) tie the two sides together — one just under the top
+    // rear stretcher, one across the back at floor level. There is no back/bottom
+    // to keep it square. Mirrors the cut-list stretchers.
+    if (openBox && c.type === "base") {
+      this.addBox(x0 + matT, x1 - matT, yT - matT - 4, yT - matT, 0, matT, carcass);
+      this.addBox(x0 + matT, x1 - matT, yB, yB + 4, 0, matT, carcass);
+    }
     // Back sits between the sides (not full width) so it doesn't share faces
     // with the side panels — eliminates corner z-fighting.
     if (!openBox) this.addBox(x0 + matT, x1 - matT, yB, yT, 0, backT, carcass);

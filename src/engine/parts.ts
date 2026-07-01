@@ -105,6 +105,16 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
   if (openBox) {
     if (c.type === "base") add("Top stretcher", 2, interiorW, 4, "carcass", "none");
     else add("Top", 1, interiorW, cd, "carcass", interiorW);
+    // An open box (appliance opening / desk knee) has no bottom, back or front
+    // to keep it square, so a base surround ties the two sides together at the
+    // back with a pair of stretchers on edge: one just under the top rear
+    // stretcher and one across the back at floor level. Together with the rear
+    // side edges they close the back into a rectangle that resists racking; the
+    // bottom one also serves as a wall nailer.
+    if (c.type === "base") {
+      add("Back stretcher", 1, interiorW, 4, "carcass", "none");
+      add("Back bottom stretcher", 1, interiorW, 4, "carcass", "none");
+    }
     // A framed desk closes its drawer cavity with a horizontal deck panel under
     // the drawer; the open knee remains below it.
     if (c.frontStyle === "desk" && framed)

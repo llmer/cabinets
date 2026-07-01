@@ -95,7 +95,7 @@ describe("cabinetBuildParts — base cabinet opening for an appliance", () => {
     const c = makeCabinet("base", "OP", { frontStyle: "opening" });
     const parts = cabinetBuildParts(c, S);
     expect(onStage(parts, "sides")).toHaveLength(2);
-    expect(onStage(parts, "carcass")).toHaveLength(2); // two top stretchers, no bottom
+    expect(onStage(parts, "carcass")).toHaveLength(4); // two top stretchers + two back stretchers, no bottom
     expect(ofKind(parts, "front")).toHaveLength(0);
     expect(ofKind(parts, "back")).toHaveLength(0);
     expect(ofKind(parts, "frame")).toHaveLength(0);
