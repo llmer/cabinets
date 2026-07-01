@@ -13,6 +13,7 @@ import {
 } from "@/engine/geometry";
 import { getDrawerHeights } from "@/engine/drawers";
 import { drawerBoxSpecs } from "@/engine/parts";
+import { fmtLen } from "@/engine/units";
 import { Run, RunMember, runsOf } from "@/engine/runs";
 import { BuildStage } from "@/engine/steps";
 import { BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
@@ -34,6 +35,16 @@ interface BuildFocus {
 
 /** How a build part is drawn relative to the current step's stage. */
 type PartMode = "built" | "current" | "ghost";
+
+/** A completed corner-to-corner measurement, broadcast to the React readout. */
+export interface MeasureResult {
+  /** Straight-line distance between the two picked corners, in inches. */
+  dist: number;
+  /** Absolute run-axis / vertical / depth spans between the corners, in inches. */
+  dx: number;
+  dy: number;
+  dz: number;
+}
 
 interface Orbit {
   theta: number;
@@ -77,6 +88,29 @@ export class CabinetScene {
   /** When set, the scene renders this single cabinet staged for the build tab. */
   private focus: BuildFocus | null = null;
   private lastFocusId: string | null = null;
+
+  /** Corner-to-corner measurement overlay (its own group so a model rebuild,
+   * which only replaces `group`, leaves an active measurement in place). The
+   * meshes are persistent — positioned/toggled per interaction — so live
+   * hover-snapping and the rubber band cost no per-frame allocation. */
+  private measureMode = false;
+  private measurePts: THREE.Vector3[] = [];
+  /** The corner currently under the cursor (drives the hover marker + rubber band). */
+  private hoverPt: THREE.Vector3 | null = null;
+  private measureGroup: THREE.Group;
+  private measureLabel: HTMLDivElement;
+  private matMeasure: THREE.MeshBasicMaterial;
+  private matHover: THREE.MeshBasicMaterial;
+  private lineMeasure: THREE.LineBasicMaterial;
+  private lineRubber: THREE.LineDashedMaterial;
+  private dotA: THREE.Mesh;
+  private dotB: THREE.Mesh;
+  private hoverMarker: THREE.Mesh;
+  private spanLine: THREE.Line;
+  private rubberLine: THREE.Line;
+  private raycaster = new THREE.Raycaster();
+  /** React readout hook, fired with the span on completion (null while pending). */
+  onMeasure: ((r: MeasureResult | null) => void) | null = null;
 
   private cleanupFns: Array<() => void> = [];
 
@@ -158,6 +192,44 @@ export class CabinetScene {
     this.group = new THREE.Group();
     scene.add(this.group);
 
+    // Measurement overlay. Everything draws with depthTest off + a high
+    // renderOrder so a span behind a door is never occluded. Objects are
+    // persistent (positioned/toggled per interaction), so the live hover
+    // marker and rubber band are allocation-free on pointer move.
+    this.matMeasure = new THREE.MeshBasicMaterial({ color: 0xb05a3c, depthTest: false });
+    this.matHover = new THREE.MeshBasicMaterial({ color: 0xc9a06b, depthTest: false, transparent: true, opacity: 0.92 });
+    this.lineMeasure = new THREE.LineBasicMaterial({ color: 0xb05a3c, depthTest: false });
+    this.lineRubber = new THREE.LineDashedMaterial({ color: 0xb05a3c, depthTest: false, transparent: true, opacity: 0.85, dashSize: 1.3, gapSize: 0.9 });
+    this.dotA = this.measureDot(this.matMeasure, 0.5);
+    this.dotB = this.measureDot(this.matMeasure, 0.5);
+    this.hoverMarker = this.measureDot(this.matHover, 0.66);
+    this.hoverMarker.renderOrder = 1000;
+    this.spanLine = new THREE.Line(new THREE.BufferGeometry(), this.lineMeasure);
+    this.spanLine.renderOrder = 999;
+    this.spanLine.visible = false;
+    this.rubberLine = new THREE.Line(new THREE.BufferGeometry(), this.lineRubber);
+    this.rubberLine.renderOrder = 999;
+    this.rubberLine.visible = false;
+    this.measureGroup = new THREE.Group();
+    this.measureGroup.add(this.dotA, this.dotB, this.hoverMarker, this.spanLine, this.rubberLine);
+    scene.add(this.measureGroup);
+    this.measureLabel = document.createElement("div");
+    Object.assign(this.measureLabel.style, {
+      position: "absolute",
+      pointerEvents: "none",
+      transform: "translate(-50%,-50%)",
+      padding: "2px 7px",
+      borderRadius: "4px",
+      font: "12px 'Geist Mono', monospace",
+      background: "rgba(31,20,14,0.92)",
+      color: "#F2E7CE",
+      border: "1px solid #B05A3C",
+      whiteSpace: "nowrap",
+      display: "none",
+      zIndex: "5",
+    } as Partial<CSSStyleDeclaration>);
+    mount.appendChild(this.measureLabel);
+
     this.attachControls(r.domElement);
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(mount);
@@ -170,16 +242,26 @@ export class CabinetScene {
     let panning = false;
     let lx = 0;
     let ly = 0;
+    let downX = 0;
+    let downY = 0;
     const onCtx = (e: Event) => e.preventDefault();
     const onDown = (e: PointerEvent) => {
       dragging = true;
       panning = e.button === 2 || e.button === 1 || e.shiftKey || e.metaKey;
       lx = e.clientX;
       ly = e.clientY;
+      downX = e.clientX;
+      downY = e.clientY;
       dom.setPointerCapture(e.pointerId);
-      dom.style.cursor = panning ? "move" : "grabbing";
+      dom.style.cursor = this.measureMode ? "crosshair" : panning ? "move" : "grabbing";
     };
     const onMove = (e: PointerEvent) => {
+      // Live corner-snap preview: track the corner under the cursor unless the
+      // pointer is mid-drag (orbiting/panning), where a moving marker is noise.
+      if (this.measureMode) {
+        if (dragging) this.hideHover();
+        else this.updateHover(e.clientX, e.clientY);
+      }
       if (!dragging) return;
       const o = this.orbit;
       const dx = e.clientX - lx;
@@ -199,14 +281,20 @@ export class CabinetScene {
       ly = e.clientY;
     };
     const end = (e: PointerEvent) => {
+      // A press that barely moved is a click, not an orbit — pick a corner.
+      const click = this.measureMode && Math.hypot(e.clientX - downX, e.clientY - downY) < 5;
       dragging = false;
       panning = false;
-      dom.style.cursor = "grab";
+      dom.style.cursor = this.measureMode ? "crosshair" : "grab";
       try {
         dom.releasePointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
+      if (click) this.measurePick(e.clientX, e.clientY);
+    };
+    const onLeave = () => {
+      if (this.measureMode) this.hideHover();
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -219,6 +307,7 @@ export class CabinetScene {
     dom.addEventListener("pointermove", onMove);
     dom.addEventListener("pointerup", end);
     dom.addEventListener("pointercancel", end);
+    dom.addEventListener("pointerleave", onLeave);
     dom.addEventListener("wheel", onWheel, { passive: false });
     this.cleanupFns.push(() => {
       dom.removeEventListener("contextmenu", onCtx);
@@ -226,6 +315,7 @@ export class CabinetScene {
       dom.removeEventListener("pointermove", onMove);
       dom.removeEventListener("pointerup", end);
       dom.removeEventListener("pointercancel", end);
+      dom.removeEventListener("pointerleave", onLeave);
       dom.removeEventListener("wheel", onWheel);
     });
   }
@@ -700,6 +790,142 @@ export class CabinetScene {
     }
   }
 
+  /** A small always-on-top sphere used for a committed point or the hover cursor. */
+  private measureDot(mat: THREE.Material, r: number): THREE.Mesh {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 12), mat);
+    m.renderOrder = 999;
+    m.visible = false;
+    return m;
+  }
+
+  /** Enter/leave the corner-to-corner measurement mode. Leaving clears the span. */
+  setMeasureMode(on: boolean) {
+    this.measureMode = on;
+    this.renderer.domElement.style.cursor = on ? "crosshair" : "grab";
+    if (!on) {
+      this.hideHover();
+      this.clearMeasure();
+    }
+  }
+
+  /** Drop the active measurement (both dots, the connector and the label). */
+  clearMeasure() {
+    this.measurePts = [];
+    this.refreshMeasure();
+  }
+
+  /** Hide the live hover marker + rubber band (pointer left the canvas / dragging). */
+  private hideHover() {
+    this.hoverPt = null;
+    this.hoverMarker.visible = false;
+    this.rubberLine.visible = false;
+  }
+
+  /** Cast the cursor into the run, snap to the nearest corner, and preview it:
+   *  a marker on that corner, plus a rubber band from the first committed point. */
+  private updateHover(clientX: number, clientY: number) {
+    this.hoverPt = this.measureRaycast(clientX, clientY);
+    this.hoverMarker.visible = !!this.hoverPt;
+    if (this.hoverPt) this.hoverMarker.position.copy(this.hoverPt);
+    if (this.measurePts.length === 1 && this.hoverPt) {
+      this.rubberLine.geometry.setFromPoints([this.measurePts[0], this.hoverPt]);
+      this.rubberLine.computeLineDistances();
+      this.rubberLine.visible = true;
+    } else {
+      this.rubberLine.visible = false;
+    }
+  }
+
+  /** Commit the corner under the cursor as the next measurement point. */
+  private measurePick(clientX: number, clientY: number) {
+    const p = this.measureRaycast(clientX, clientY);
+    if (!p) return; // clicking empty space is a no-op, not a stray point
+    // A third click begins a fresh span rather than appending to a finished one.
+    if (this.measurePts.length >= 2) this.measurePts = [];
+    this.measurePts.push(p);
+    this.refreshMeasure();
+  }
+
+  /** Position the committed dots + span line and broadcast the result. */
+  private refreshMeasure() {
+    const pts = this.measurePts;
+    this.dotA.visible = pts.length >= 1;
+    if (pts[0]) this.dotA.position.copy(pts[0]);
+    this.dotB.visible = pts.length >= 2;
+    if (pts[1]) this.dotB.position.copy(pts[1]);
+    if (pts.length === 2) {
+      this.spanLine.geometry.setFromPoints(pts);
+      this.spanLine.visible = true;
+      const [a, b] = pts;
+      this.onMeasure?.({
+        dist: a.distanceTo(b),
+        dx: Math.abs(a.x - b.x),
+        dy: Math.abs(a.y - b.y),
+        dz: Math.abs(a.z - b.z),
+      });
+    } else {
+      this.spanLine.visible = false;
+      this.onMeasure?.(null);
+    }
+    if (pts.length !== 1) this.rubberLine.visible = false;
+  }
+
+  /** Ray a screen point into the run and snap the hit to its box's nearest corner. */
+  private measureRaycast(clientX: number, clientY: number): THREE.Vector3 | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(new THREE.Vector2(nx, ny), this.camera);
+    const meshes = this.group.children.filter((o) => (o as THREE.Mesh).isMesh);
+    const hit = this.raycaster.intersectObjects(meshes, false)[0];
+    return hit ? this.snapToCorner(hit) : null;
+  }
+
+  /** Snap a surface hit to the nearest of its box's 8 corners — the parts are
+   *  axis-aligned boxes in an untransformed group, so world = local geometry. */
+  private snapToCorner(hit: THREE.Intersection): THREE.Vector3 {
+    const params = ((hit.object as THREE.Mesh).geometry as THREE.BoxGeometry).parameters;
+    if (!params || params.width == null) return hit.point.clone();
+    const c = (hit.object as THREE.Mesh).position;
+    const half = new THREE.Vector3(params.width / 2, params.height / 2, params.depth / 2);
+    let best = hit.point.clone();
+    let bestD = Infinity;
+    for (const sx of [-1, 1])
+      for (const sy of [-1, 1])
+        for (const sz of [-1, 1]) {
+          const corner = new THREE.Vector3(c.x + sx * half.x, c.y + sy * half.y, c.z + sz * half.z);
+          const d = corner.distanceToSquared(hit.point);
+          if (d < bestD) {
+            bestD = d;
+            best = corner;
+          }
+        }
+    return best;
+  }
+
+  /** Park the floating length label at the midpoint of the active segment —
+   *  the committed span, or the live rubber band while placing the 2nd point. */
+  private updateMeasureLabel() {
+    const el = this.measureLabel;
+    const pts = this.measurePts;
+    const a = pts[0] ?? null;
+    const b = pts.length === 2 ? pts[1] : pts.length === 1 ? this.hoverPt : null;
+    if (!a || !b || a.distanceToSquared(b) < 1e-4) {
+      if (el.style.display !== "none") el.style.display = "none";
+      return;
+    }
+    const ndc = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5).project(this.camera);
+    if (ndc.z > 1) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.left = (ndc.x * 0.5 + 0.5) * this.mount.clientWidth + "px";
+    el.style.top = (-ndc.y * 0.5 + 0.5) * this.mount.clientHeight + "px";
+    el.textContent = fmtLen(a.distanceTo(b), this.settings.units);
+    el.style.display = "block";
+  }
+
   fitView() {
     const d = this.runDims;
     this.orbit.target.set(d.maxX / 2, d.maxTop * 0.46, d.maxD / 2);
@@ -748,12 +974,19 @@ export class CabinetScene {
     );
     c.lookAt(o.target);
     this.renderer.render(this.scene, this.camera);
+    this.updateMeasureLabel();
   };
 
   dispose() {
     cancelAnimationFrame(this.raf);
     this.ro.disconnect();
     this.cleanupFns.forEach((fn) => fn());
+    [this.dotA, this.dotB, this.hoverMarker, this.spanLine, this.rubberLine].forEach((o) => o.geometry.dispose());
+    this.matMeasure.dispose();
+    this.matHover.dispose();
+    this.lineMeasure.dispose();
+    this.lineRubber.dispose();
+    if (this.measureLabel.parentElement) this.measureLabel.parentElement.removeChild(this.measureLabel);
     this.renderer.dispose();
     if (this.renderer.domElement.parentElement === this.mount) {
       this.mount.removeChild(this.renderer.domElement);

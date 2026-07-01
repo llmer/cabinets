@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { color, font } from "@/theme";
-import { CabinetScene } from "@/three/CabinetScene";
+import { CabinetScene, MeasureResult } from "@/three/CabinetScene";
 import { useStore } from "@/state/store";
 import { Button, MonoLabel, Serif, Toggle } from "@/components/ui";
 import { constructionInfo } from "@/engine/labels";
+import { fmtLen } from "@/engine/units";
 
 export function ThreeView() {
   const cabinets = useStore((s) => s.project.cabinets);
@@ -19,6 +20,8 @@ export function ThreeView() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<CabinetScene | null>(null);
   const [failed, setFailed] = useState(false);
+  const [measure, setMeasure] = useState(false);
+  const [span, setSpan] = useState<MeasureResult | null>(null);
 
   // create once
   useEffect(() => {
@@ -31,6 +34,7 @@ export function ThreeView() {
       return;
     }
     const scene = sceneRef.current;
+    scene.onMeasure = setSpan;
     return () => {
       scene.dispose();
       sceneRef.current = null;
@@ -41,6 +45,11 @@ export function ThreeView() {
   useEffect(() => {
     sceneRef.current?.setData(cabinets, settings, showFronts, tintCabinets);
   }, [cabinets, settings, showFronts, tintCabinets]);
+
+  // toggle the click-to-measure overlay
+  useEffect(() => {
+    sceneRef.current?.setMeasureMode(measure);
+  }, [measure]);
 
   const viewBtn: React.CSSProperties = {
     border: "none",
@@ -80,6 +89,9 @@ export function ThreeView() {
             <button style={viewBtn} onClick={() => sceneRef.current?.setView("front")}>Front</button>
             <button style={{ ...viewBtn, borderRight: "none" }} onClick={() => sceneRef.current?.setView("top")}>Top</button>
           </div>
+          <Toggle active={measure} style={{ padding: "8px 13px", fontFamily: font.mono, fontSize: 12 }} onClick={() => setMeasure((m) => !m)}>
+            {measure ? "Measuring…" : "Measure"}
+          </Toggle>
           <Button variant="ghost" style={{ padding: "8px 13px", fontFamily: font.mono, fontSize: 12 }} onClick={() => sceneRef.current?.resetView()}>
             Reset
           </Button>
@@ -114,6 +126,23 @@ export function ThreeView() {
           </div>
         )}
       </div>
+      {measure && (
+        <div className="no-print" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", border: `1px solid ${color.border}`, borderRadius: 6, background: color.panel, padding: "10px 14px" }}>
+          {span ? (
+            <>
+              <span style={{ fontFamily: font.serif, fontSize: 24, color: color.inkStrong, lineHeight: 1 }}>{fmtLen(span.dist, settings.units)}</span>
+              <span style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, letterSpacing: ".03em" }}>
+                run {fmtLen(span.dx, settings.units)} · height {fmtLen(span.dy, settings.units)} · depth {fmtLen(span.dz, settings.units)}
+              </span>
+              <Button variant="mono" style={{ marginLeft: "auto" }} onClick={() => sceneRef.current?.clearMeasure()}>Clear</Button>
+            </>
+          ) : (
+            <span style={{ fontFamily: font.mono, fontSize: 12, color: color.inkMuted }}>
+              Hover to snap a corner, click to set it, then click the second. Drag still orbits.
+            </span>
+          )}
+        </div>
+      )}
       <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 18, fontFamily: font.mono, fontSize: 11, color: color.faint, letterSpacing: ".03em", alignItems: "center" }}>
         <span><b style={{ color: color.inkMuted }}>Drag</b> to orbit</span>
         <span>
