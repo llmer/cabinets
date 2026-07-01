@@ -162,6 +162,32 @@ stock (hardwood face frame) is priced by the foot and never nested into sheets.
   `renderToString`-ing every non-3D view (server-side) to catch runtime throws the
   type-checker can't — extend it when adding a view.
 
+### Mutation rules live in `domain/ops.ts` (shared by store + MCP)
+
+The business rules that mutate a project — the drawer-stack budget recompute when
+construction/overlay/frontStyle/drawerCount/type change, the desk/opening
+open-box invariants, the type clamps — are **pure functions in `src/domain/ops.ts`**
+(`(cabinets|settings, …args) → fresh value`). `state/store.ts` wraps them with
+undo history + autosave; the headless MCP server calls them directly. Keep new
+mutation logic here, not inlined in the store, so the UI and an agent can't drift.
+`src/engine/audit.ts` is the pure design review (oversize parts, exhausted drawer
+budgets, wide doors, mixed toe-kick runs, …) — golden-tested like the rest of the engine.
+
+## Headless: the MCP server (`mcp/`)
+
+`mcp/server.ts` exposes the builder over the [Model Context Protocol](https://modelcontextprotocol.io)
+so an agent can design / audit / assist a build. It imports the **pure** engine +
+`ops` (never React/DOM), holds one project in a `CabinetSession` (`mcp/session.ts`),
+and round-trips it through the same `.cabinets.json` files. Run it with `npm run mcp`
+(stdio via `tsx`, so the `@/*` alias resolves from `tsconfig.json` with no build
+step); `.mcp.json` registers it for MCP clients. `npm run mcp:smoke` drives the
+live server end-to-end. Formatters (`mcp/format.ts`) and the glossary
+(`mcp/reference.ts`) turn the model into agent-readable text — they never recompute
+domain math, same rule as the views. `mcp/` is in the root `tsconfig.json` include,
+so `npm run typecheck`/`build` cover it, and it is deliberately outside the vitest
+`include` (its check is the subprocess smoke run). Only JSON-RPC goes to stdout;
+logs go to stderr.
+
 ## Domain caveat
 
 Every view repeats it and so should any output: this estimates a cut list and is

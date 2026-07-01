@@ -27,9 +27,26 @@ npm run build      # type-check + production bundle to dist/
 npm run preview    # serve the production build
 npm run test       # run the engine + render test suite (vitest)
 npm run typecheck  # tsc --noEmit
+npm run mcp        # start the MCP server (stdio) — see "AI agents" below
+npm run mcp:smoke  # drive the MCP server end-to-end and assert
 ```
 
 Requires Node 18+ (developed on Node 24).
+
+## AI agents (MCP server)
+
+frame(less) ships an **[MCP](https://modelcontextprotocol.io) server** so an AI
+agent can drive the tool directly — designing a kitchen, auditing a design, and
+walking a build — using the *same* engine and mutation rules as the app. It's
+registered for this repo in [`.mcp.json`](.mcp.json); open the repo in an
+MCP-capable client (Claude Code, Claude Desktop, Cursor) and enable the
+**cabinets** server, or run `npm run mcp` and point your own client at stdio.
+
+It exposes ~27 tools across four jobs — **design** (`add_cabinet`,
+`update_cabinet`, `set_run_break`, `apply_to_all`), **audit** (`audit_project`,
+`project_summary`), **build** (`get_cut_list`, `get_sheets`, `get_build_steps`,
+`get_shopping_list`), and **explain** (`explain`, `list_materials`) — plus
+`cabinets://` resources and one prompt per persona. Full catalog: [`mcp/README.md`](mcp/README.md).
 
 ## Features
 

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cabinets": {
+      "command": "npx",
+      "args": ["tsx", "mcp/server.ts"],
+      "env": {}
+    }
+  }
+}
