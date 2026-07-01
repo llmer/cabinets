@@ -89,7 +89,6 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   const openBox = opening || desk;
   const yB = buildBaseY(c, s);
   const yT = yB + boxH;
-  const cd = openBox ? D : D - backT;
   const x1 = W;
 
   const ff = s.frameWidth || 1.5; // stile / mid / bottom-rail width
@@ -101,18 +100,20 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   const frameBottom = framed && based ? s.faceFrameFloorGap || 3.25 : yB;
 
   /* ---------- carcass ---------- */
-  // side panels — cut, drilled and edge-banded at the `sides` stage. On a framed
-  // toe-kicked box the (exposed) ends drop to the frame line, like the run ends.
-  push("sides", "carcass", 0, matT, frameBottom, yT, 0, cd);
-  push("sides", "carcass", x1 - matT, x1, frameBottom, yT, 0, cd);
+  // side panels — cut, drilled and edge-banded at the `sides` stage. They run the
+  // FULL depth (0..D) so the front sits at the front plane (flush with the front
+  // stretcher + face frame) and the rear stays flush with the inset applied back.
+  // On a framed toe-kicked box the (exposed) ends drop to the frame line.
+  push("sides", "carcass", 0, matT, frameBottom, yT, 0, D);
+  push("sides", "carcass", x1 - matT, x1, frameBottom, yT, 0, D);
   // bottom (closed boxes only)
-  if (!openBox) push("carcass", "carcass", matT, x1 - matT, yB, yB + matT, 0, cd);
+  if (!openBox) push("carcass", "carcass", matT, x1 - matT, yB, yB + matT, 0, D);
   // top: base/desk get two stretchers (front + back), others a full top
   if (c.type === "base") {
     push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, 4);
-    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, cd - 4, cd);
+    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, D - 4, D);
   } else {
-    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, cd);
+    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, D);
   }
   // Open box (appliance opening / desk knee): a pair of back stretchers on edge
   // (at the back, z≈0) stiffen the open surround — one under the top rear
@@ -122,8 +123,9 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
     push("carcass", "carcass", matT, x1 - matT, yT - matT - 4, yT - matT, 0, matT);
     push("carcass", "carcass", matT, x1 - matT, yB, yB + 4, 0, matT);
   }
-  // applied back — squares the closed box
-  if (!openBox) push("back", "back", matT, x1 - matT, yB, yT, 0, backT);
+  // applied back — squares the closed box, captured inset at the rear with its
+  // top tucked just UNDER the top back stretcher (which owns the top-rear corner).
+  if (!openBox) push("back", "back", matT, x1 - matT, yB, yT - matT + 0.06, 0, backT);
   // desk writing surface, capping the open box (not a nested cut-list part)
   if (desk) push("desktop", "carcass", 0, W, yT, yT + matT, 0, D);
   // Separate toe-kick base: recessed from the front, and (with a separate base)
@@ -138,7 +140,7 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   if (!openBox && c.shelves > 0) {
     for (let i = 1; i <= c.shelves; i++) {
       const sy = yB + matT + ((boxH - 2 * matT) * i) / (c.shelves + 1);
-      push("shelves", "shelf", matT, x1 - matT, sy, sy + 0.75, backT, cd - 1);
+      push("shelves", "shelf", matT, x1 - matT, sy, sy + 0.75, backT, D - 1);
     }
   }
 
@@ -231,7 +233,7 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
       // the top rail) + a deck panel closing the drawer cavity off from the knee.
       if (desk && framed) {
         push("faceFrame", "frame", rl, rr, y - railGap, y, fz0, fz1);
-        push("carcass", "carcass", matT, x1 - matT, y - railGap, y - railGap + matT, 0, cd);
+        push("carcass", "carcass", matT, x1 - matT, y - railGap, y - railGap + matT, 0, D);
       }
       if (c.frontStyle === "door_drawer") {
         drawRail(y - railGap, y);

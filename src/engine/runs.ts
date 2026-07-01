@@ -155,6 +155,23 @@ export function runsOf(cabinets: Cabinet[], s: Settings): Run[] {
   return runs;
 }
 
+/**
+ * Can two adjacent run members share ONE 3/4" partition at their joint (instead
+ * of two butted side panels)? They must line up — same bottom + top off the
+ * floor and the same open/closed back, so the shared panel's height and depth
+ * match both bays — and `sharedPartitions` must be on. A toe-kicked bay beside a
+ * floor-standing one fails the test and keeps its own side. Used identically by
+ * the cut list (`compute`) and the 3D scene so they never drift.
+ */
+export function membersSharePartition(a: RunMember, b: RunMember, s: Settings): boolean {
+  return (
+    !!s.sharedPartitions &&
+    a.yB === b.yB &&
+    a.boxTop === b.boxTop &&
+    isOpenBox(a.cabinet) === isOpenBox(b.cabinet)
+  );
+}
+
 /** Contiguous spans of toe-kicked members within a run — one base ladder each. */
 export function baseSegments(run: Run): RunMember[][] {
   const segs: RunMember[][] = [];

@@ -84,6 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
   toeKickSideRecess: 2,
   continuousFaceFrame: true,
   separateBase: true,
+  sharedPartitions: false,
   faceFrameFloorGap: 3.25,
   upperBottom: 54,
   counterH: 36,

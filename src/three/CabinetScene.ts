@@ -14,7 +14,7 @@ import {
 import { getDrawerHeights } from "@/engine/drawers";
 import { drawerBoxSpecs } from "@/engine/parts";
 import { fmtLen } from "@/engine/units";
-import { Run, RunMember, runsOf } from "@/engine/runs";
+import { Run, RunMember, membersSharePartition, runsOf } from "@/engine/runs";
 import { BuildStage } from "@/engine/steps";
 import { BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
 
@@ -415,26 +415,43 @@ export class CabinetScene {
     const sideDrop = continuous ? Math.max(0, yB - bayFB) : 0;
     const leftBot = sideDrop > 0 && rm?.leftEnd ? yB - sideDrop : yB;
     const rightBot = sideDrop > 0 && rm?.rightEnd ? yB - sideDrop : yB;
-    this.addBox(x0, x0 + matT, leftBot, yT, 0, cd, carcass);
-    this.addBox(x1 - matT, x1, rightBot, yT, 0, cd, carcass);
-    if (!openBox) this.addBox(x0 + matT, x1 - matT, yB, yB + matT, 0, cd, carcass);
+    // Shared partitions: adjacent bays that line up carry ONE 3/4" panel at the
+    // joint (see membersSharePartition). The left bay owns it — drawn centred so
+    // the stile laps both sides; the right bay drops its matching side.
+    const prevM = run && ri > 0 ? run.members[ri - 1] : undefined;
+    const nextM = run && ri >= 0 ? run.members[ri + 1] : undefined;
+    const shareLeft = continuous && !!(rm && prevM && membersSharePartition(prevM, rm, S));
+    const shareRight = continuous && !!(rm && nextM && membersSharePartition(rm, nextM, S));
+    // Sides run the FULL depth (0..D): the front sits at the front plane (flush
+    // with the front stretcher + proud face frame) and the rear stays flush with
+    // the inset applied back — no recessed front, no protruding back tongue.
+    if (!shareLeft) this.addBox(x0, x0 + matT, leftBot, yT, 0, D, carcass);
+    if (shareRight) this.addBox(x1 - matT / 2, x1 + matT / 2, rightBot, yT, 0, D, carcass);
+    else this.addBox(x1 - matT, x1, rightBot, yT, 0, D, carcass);
+    // Interior panels stop at the shared partition's inner face — half a panel in
+    // from the joint wherever a side is shared, else at the bay's own side.
+    const iL = x0 + (shareLeft ? matT / 2 : matT);
+    const iR = x1 - (shareRight ? matT / 2 : matT);
+    if (!openBox) this.addBox(iL, iR, yB, yB + matT, 0, D, carcass);
     if (c.type === "base") {
-      this.addBox(x0 + matT, x1 - matT, yT - matT, yT, 0, 4, carcass);
-      this.addBox(x0 + matT, x1 - matT, yT - matT, yT, cd - 4, cd, carcass);
+      this.addBox(iL, iR, yT - matT, yT, 0, 4, carcass);
+      this.addBox(iL, iR, yT - matT, yT, D - 4, D, carcass);
     } else {
-      this.addBox(x0 + matT, x1 - matT, yT - matT, yT, 0, cd, carcass);
+      this.addBox(iL, iR, yT - matT, yT, 0, D, carcass);
     }
     // Open box (appliance opening / desk knee): a pair of back stretchers on
     // edge (at the back, z≈0) tie the two sides together — one just under the top
     // rear stretcher, one across the back at floor level. There is no back/bottom
     // to keep it square. Mirrors the cut-list stretchers.
     if (openBox && c.type === "base") {
-      this.addBox(x0 + matT, x1 - matT, yT - matT - 4, yT - matT, 0, matT, carcass);
-      this.addBox(x0 + matT, x1 - matT, yB, yB + 4, 0, matT, carcass);
+      this.addBox(iL, iR, yT - matT - 4, yT - matT, 0, matT, carcass);
+      this.addBox(iL, iR, yB, yB + 4, 0, matT, carcass);
     }
-    // Back sits between the sides (not full width) so it doesn't share faces
-    // with the side panels — eliminates corner z-fighting.
-    if (!openBox) this.addBox(x0 + matT, x1 - matT, yB, yT, 0, backT, carcass);
+    // Applied back: inset between the sides (not full width) and captured at the
+    // rear of the full-depth sides. Its top tucks just UNDER the top back
+    // stretcher (a hair's lap, no coplanar seam) so the stretcher owns the
+    // top-rear corner and the back reads as inset below it.
+    if (!openBox) this.addBox(iL, iR, yB, yT - matT + 0.06, 0, backT, carcass);
     // Toe-kick base: recessed from the FRONT, and (with a separate base) set in
     // on the exposed END sides of the run too — the box-on-a-base look.
     if (c.type !== "wall" && c.toeKick !== false && !openBox && yB > 0) {
@@ -458,7 +475,7 @@ export class CabinetScene {
       if (!openBox && c.shelves > 0) {
         for (let i = 1; i <= c.shelves; i++) {
           const sy = yB + matT + ((boxH - 2 * matT) * i) / (c.shelves + 1);
-          this.addBox(x0 + matT, x1 - matT, sy, sy + 0.75, backT, cd - 1, this.matCarcassIn);
+          this.addBox(iL, iR, sy, sy + 0.75, backT, D - 1, this.matCarcassIn);
         }
       }
       this.addDrawerBoxes3D(c, x0, yT, fz0);
@@ -546,7 +563,7 @@ export class CabinetScene {
         // inset plane) so it covers the deck and reads as one flush piece.
         if (desk && framed) {
           this.addBox(rl, rr, y - railGap, y, ffz0, ffz1, fm);
-          this.addBox(x0 + matT, x1 - matT, y - railGap, y - railGap + matT, 0, cd, fm);
+          this.addBox(iL, iR, y - railGap, y - railGap + matT, 0, cd, fm);
         }
         if (c.frontStyle === "door_drawer") {
           drawRail(y - railGap, y);

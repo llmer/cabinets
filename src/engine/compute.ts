@@ -11,7 +11,7 @@ import {
 import { typeLabel } from "./labels";
 import { PackRect, StockPack, packStock } from "./packing";
 import { FrameContext, bandingInchesPerPiece, genParts, mergeParts } from "./parts";
-import { Run, runsOf } from "./runs";
+import { Run, membersSharePartition, runsOf } from "./runs";
 import { genBaseParts, genRunFrameParts } from "./runParts";
 import { StepGroup, genSteps } from "./steps";
 import { fmtLen } from "./units";
@@ -155,14 +155,20 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
   if (s.continuousFaceFrame) {
     for (const run of runs) {
       if (!run.framed) continue;
-      for (const m of run.members)
+      const ms = run.members;
+      // A joint shares ONE partition (the left bay owns it, the right bay drops
+      // its side) only where the two bays line up — see membersSharePartition.
+      ms.forEach((m, i) =>
         frameCtx.set(m.cabinet.id, {
           emitFaceFrame: false,
           openingWidth: m.openingWidth,
           sideDrop: Math.max(0, m.yB - m.frameBottom),
           leftEnd: m.leftEnd,
           rightEnd: m.rightEnd,
-        });
+          shareLeft: i > 0 && membersSharePartition(ms[i - 1], m, s),
+          shareRight: i < ms.length - 1 && membersSharePartition(m, ms[i + 1], s),
+        }),
+      );
     }
   }
 

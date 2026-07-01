@@ -70,6 +70,7 @@
     "toeKickSideRecess": 2,
     "continuousFaceFrame": true,
     "separateBase": true,
+    "sharedPartitions": true,
     "faceFrameFloorGap": 3.25,
     "upperBottom": 54,
     "counterH": 36,
