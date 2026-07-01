@@ -211,7 +211,7 @@ export function genSteps(cp: CabinetParts, s: Settings, color: string): StepGrou
     const ffRails = 1 + (g.openBox ? 0 : 1) + midRails;
     const ffl = Math.ceil((ffStiles * g.boxHeight + ffRails * railLen) / 12);
     push(
-      `Cut ~${ffl} ft of 1 1/2" × 3/4" hardwood into ${ffStiles} stile${ffStiles > 1 ? "s" : ""} and ${ffRails} rail${ffRails > 1 ? "s" : ""}, each sized to the front of the box.`,
+      `Cut ~${ffl} ft of 3/4" hardwood into ${ffStiles} stile${ffStiles > 1 ? "s" : ""} and ${ffRails} rail${ffRails > 1 ? "s" : ""} — ${fmtLen(ffw, u)} wide (${fmtLen(s.faceFrameTop || 2, u)} top rail), each sized to the front of the box.`,
       "faceFrame",
     );
     push(

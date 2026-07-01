@@ -67,7 +67,10 @@ export function shoppingListText(model: Model, s: Settings): string {
     if (pack.sheets.length === 0) continue;
     lines.push(`${pack.sheets.length} × ${pack.label} (${fmtLen(pack.sheetH, s.units)} × ${fmtLen(pack.sheetW, s.units)})`);
   }
-  if (summary.frameLF > 0) lines.push(`${summary.frameLF} ft × 1 1/2" hardwood (face frames)`);
+  if (summary.frameLF > 0)
+    lines.push(
+      `${summary.frameLF} ft × ${fmtLen(s.frameWidth, s.units)} hardwood (face-frame stiles/rails; ${fmtLen(s.faceFrameTop, s.units)} top rails)`,
+    );
   lines.push(`${summary.bandLF} ft × edge-banding`);
   lines.push("");
   lines.push("HARDWARE");

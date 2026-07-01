@@ -1,9 +1,6 @@
 import { create } from "zustand";
-import {
-  defaultCabinet,
-  newProject,
-  nextId,
-} from "@/domain/defaults";
+import { newProject } from "@/domain/defaults";
+import * as ops from "@/domain/ops";
 import {
   Cabinet,
   CabinetType,
@@ -17,7 +14,6 @@ import {
   Stock,
   StockId,
 } from "@/domain/types";
-import { defaultHeights, evenHeights, withDrawerHeight } from "@/engine/drawers";
 import {
   loadBuildProgress,
   loadProject,
@@ -36,7 +32,6 @@ export function stepKey(cabinetId: string, n: number): string {
 }
 
 const HISTORY_LIMIT = 60;
-const BASE_ONLY_FRONTS: FrontStyle[] = ["drawers", "door_drawer", "desk"];
 
 interface AppState {
   project: Project;
@@ -158,8 +153,10 @@ export const useStore = create<AppState>((set, get) => {
     apply({ ...p, cabinets: fn(p.cabinets) }, history);
   }
 
-  function patchCab(id: string, patch: Partial<Cabinet>) {
-    withCabinets((cabs) => cabs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  /** Mutate the settings immutably. */
+  function withSettings(fn: (s: Settings) => Settings) {
+    const p = get().project;
+    apply({ ...p, settings: fn(p.settings) });
   }
 
   const initialProject = loadProject();
@@ -282,36 +279,29 @@ export const useStore = create<AppState>((set, get) => {
         return next;
       }),
 
-    updateCab: (id, patch) => patchCab(id, patch),
+    updateCab: (id, patch) => withCabinets((cabs) => ops.patchCabinet(cabs, id, patch)),
 
     addCab: (type) => {
-      const prefix = type === "wall" ? "W" : type === "tall" ? "T" : "B";
-      const n = get().project.cabinets.filter((c) => c.type === type).length + 1;
-      const cab: Cabinet = { id: nextId(), name: prefix + n, ...defaultCabinet(type) };
-      withCabinets((cabs) => [...cabs, cab]);
-      set({ selectedId: cab.id });
+      const { cabinets, cabinet } = ops.addCabinet(
+        get().project.cabinets,
+        get().project.settings,
+        type,
+      );
+      withCabinets(() => cabinets);
+      set({ selectedId: cabinet.id });
     },
 
     removeCab: (id) => {
-      const remaining = get().project.cabinets.filter((c) => c.id !== id);
+      const remaining = ops.removeCabinet(get().project.cabinets, id);
       withCabinets(() => remaining);
-      if (get().selectedId === id)
-        set({ selectedId: remaining[0]?.id ?? null });
+      if (get().selectedId === id) set({ selectedId: remaining[0]?.id ?? null });
     },
 
     duplicateCab: (id) => {
-      const src = get().project.cabinets.find((c) => c.id === id);
-      if (!src) return;
-      const prefix = src.type === "wall" ? "W" : src.type === "tall" ? "T" : "B";
-      const n = get().project.cabinets.filter((c) => c.type === src.type).length + 1;
-      const copy: Cabinet = { ...src, id: nextId(), name: prefix + n };
-      withCabinets((cabs) => {
-        const i = cabs.findIndex((c) => c.id === id);
-        const arr = cabs.slice();
-        arr.splice(i + 1, 0, copy);
-        return arr;
-      });
-      set({ selectedId: copy.id });
+      const { cabinets, cabinet } = ops.duplicateCabinet(get().project.cabinets, id);
+      if (!cabinet) return;
+      withCabinets(() => cabinets);
+      set({ selectedId: cabinet.id });
     },
 
     reorderBand: (band, orderedIds, history = false) => {
@@ -321,121 +311,41 @@ export const useStore = create<AppState>((set, get) => {
       }, history);
     },
 
-    setCabinetType: (id, type) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      const patch: Partial<Cabinet> = { type };
-      if (type !== "base" && BASE_ONLY_FRONTS.includes(sel.frontStyle))
-        patch.frontStyle = "doors";
-      if (type === "wall" && sel.depth >= 18) patch.depth = 12;
-      if (type === "tall" && sel.height < 60) patch.height = 84;
-      patchCab(id, patch);
-    },
+    setCabinetType: (id, type) => withCabinets((cabs) => ops.setCabinetType(cabs, id, type)),
 
-    setFrontStyle: (id, style) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      const patch: Partial<Cabinet> = { frontStyle: style };
-      if (style === "desk") {
-        patch.toeKick = false;
-        patch.shelves = 0;
-        if (sel.drawerCount < 1) patch.drawerCount = 1;
-      }
-      if (style === "opening") {
-        patch.toeKick = false;
-        patch.shelves = 0;
-      }
-      const tmp = { ...sel, ...patch };
-      patch.drawerHeights = defaultHeights(tmp, get().project.settings);
-      patchCab(id, patch);
-    },
+    setFrontStyle: (id, style) =>
+      withCabinets((cabs) => ops.setFrontStyle(cabs, get().project.settings, id, style)),
 
-    setOverlay: (id, overlay) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      // Budget changes with overlay; reset drawer heights to a fresh even split.
-      const tmp = { ...sel, overlay };
-      patchCab(id, { overlay, drawerHeights: defaultHeights(tmp, get().project.settings) });
-    },
+    setOverlay: (id, overlay) =>
+      withCabinets((cabs) => ops.setOverlay(cabs, get().project.settings, id, overlay)),
 
-    setConstruction: (id, c) => {
-      const sel = get().project.cabinets.find((x) => x.id === id);
-      if (!sel) return;
-      const tmp = { ...sel, construction: c };
-      patchCab(id, { construction: c, drawerHeights: defaultHeights(tmp, get().project.settings) });
-    },
+    setConstruction: (id, c) =>
+      withCabinets((cabs) => ops.setConstruction(cabs, get().project.settings, id, c)),
 
-    setDrawerCount: (id, n) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      patchCab(id, {
-        drawerCount: n,
-        drawerHeights: evenHeights(sel, n, get().project.settings),
-      });
-    },
+    setDrawerCount: (id, n) =>
+      withCabinets((cabs) => ops.setDrawerCount(cabs, get().project.settings, id, n)),
 
-    resetDrawerHeights: (id) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      patchCab(id, { drawerHeights: defaultHeights(sel, get().project.settings) });
-    },
+    resetDrawerHeights: (id) =>
+      withCabinets((cabs) => ops.resetDrawerHeights(cabs, get().project.settings, id)),
 
-    setDrawerHeightAt: (id, i, value) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      patchCab(id, {
-        drawerHeights: withDrawerHeight(sel, get().project.settings, i, value),
-      });
-    },
+    setDrawerHeightAt: (id, i, value) =>
+      withCabinets((cabs) => ops.setDrawerHeightAt(cabs, get().project.settings, id, i, value)),
 
-    setRunBreak: (id, on) =>
-      patchCab(id, on ? { runBreak: true } : { runBreak: undefined }),
+    setRunBreak: (id, on) => withCabinets((cabs) => ops.setRunBreak(cabs, id, on)),
 
     setConstructionAll: (mode) =>
-      withCabinets((cabs) =>
-        cabs.map((c) => {
-          const next = { ...c, construction: mode };
-          return { ...next, drawerHeights: defaultHeights(next, get().project.settings) };
-        }),
-      ),
+      withCabinets((cabs) => ops.setConstructionAll(cabs, get().project.settings, mode)),
 
     setOverlayAll: (mode) =>
-      withCabinets((cabs) =>
-        cabs.map((c) => {
-          const next = { ...c, overlay: mode };
-          return { ...next, drawerHeights: defaultHeights(next, get().project.settings) };
-        }),
-      ),
+      withCabinets((cabs) => ops.setOverlayAll(cabs, get().project.settings, mode)),
 
-    updateSettings: (patch) =>
-      apply({ ...get().project, settings: { ...get().project.settings, ...patch } }),
+    updateSettings: (patch) => withSettings((s) => ops.updateSettings(s, patch)),
 
-    updateStock: (id, patch) => {
-      const s = get().project.settings;
-      apply({
-        ...get().project,
-        settings: {
-          ...s,
-          stocks: { ...s.stocks, [id]: { ...s.stocks[id], ...patch } },
-        },
-      });
-    },
+    updateStock: (id, patch) => withSettings((s) => ops.updateStock(s, id, patch)),
 
-    setRoleStock: (role, stockId) => {
-      const s = get().project.settings;
-      apply({
-        ...get().project,
-        settings: { ...s, roleStock: { ...s.roleStock, [role]: stockId } },
-      });
-    },
+    setRoleStock: (role, stockId) => withSettings((s) => ops.setRoleStock(s, role, stockId)),
 
-    updateHardware: (patch) => {
-      const s = get().project.settings;
-      apply({
-        ...get().project,
-        settings: { ...s, hardware: { ...s.hardware, ...patch } },
-      });
-    },
+    updateHardware: (patch) => withSettings((s) => ops.updateHardware(s, patch)),
   };
 });
 
