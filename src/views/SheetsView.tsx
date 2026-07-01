@@ -1,7 +1,7 @@
 import { color, font } from "@/theme";
 import { constructionInfo } from "@/engine/labels";
 import { fmtLen, toFrac } from "@/engine/units";
-import { StockPack } from "@/engine/packing";
+import { LinearPack, StockPack } from "@/engine/packing";
 import { useModel } from "@/state/useModel";
 import { useStore } from "@/state/store";
 import { sheetsCsv } from "@/state/exporters";
@@ -66,13 +66,66 @@ function SheetPack({ pack, units, kerf, rot }: { pack: StockPack; units: "in" | 
   );
 }
 
+/** Hardwood (linear) cut plan — each board drawn as a bar with its cuts end to end. */
+function LinearBoardPack({ pack, units }: { pack: LinearPack; units: "in" | "mm" }) {
+  if (!pack.boards.length) return null; // oversize-only runs surface in the top warning
+  const sc = 430 / pack.boardLength; // px per inch — same scale as the sheet diagrams
+  const capacity = pack.boards.length * pack.boardLength;
+  const packYield = capacity ? Math.round((pack.usedLength / capacity) * 100) : 0;
+  return (
+    <div style={{ marginBottom: 30 }}>
+      <div style={{ fontFamily: font.mono, fontSize: 12, color: color.inkMuted, marginBottom: 12, letterSpacing: ".04em" }}>
+        {pack.label} · <strong style={{ color: color.hardwood }}>{fmtLen(pack.width, units)} wide</strong> · {pack.boards.length} board{pack.boards.length === 1 ? "" : "s"} of {fmtLen(pack.boardLength, units)} · {packYield}% yield
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {pack.boards.map((b, i) => (
+          <div key={i}>
+            <div style={{ fontFamily: font.mono, fontSize: 11, letterSpacing: ".06em", color: color.inkMuted, marginBottom: 6 }}>
+              Board {i + 1} / {pack.boards.length} · drop {fmtLen(Math.max(0, pack.boardLength - b.used), units)}
+            </div>
+            <div style={{ position: "relative", width: pack.boardLength * sc, height: 30, background: color.panel, border: `1px solid ${color.inkStrong}`, borderRadius: 3, boxShadow: "0 1px 2px rgba(31,20,14,.06)" }}>
+              {b.cuts.map((c, j) => {
+                const w = c.length * sc;
+                return (
+                  <div
+                    key={j}
+                    title={`${c.label} · ${c.part} · ${toFrac(c.length)}`}
+                    style={{
+                      position: "absolute",
+                      left: c.offset * sc,
+                      top: 0,
+                      bottom: 0,
+                      width: Math.max(1, w - 1),
+                      background: c.color + "40",
+                      border: `1px solid ${c.color}`,
+                      borderRadius: 1,
+                      overflow: "hidden",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {w > 34 ? (
+                      <span style={{ fontFamily: font.mono, fontSize: 9, color: color.inkStrong }}>{fmtLen(c.length, units)}</span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SheetsView() {
   const model = useModel();
   const settings = useStore((s) => s.project.settings);
   const cabinets = useStore((s) => s.project.cabinets);
   const projectName = useStore((s) => s.project.name);
   const updateSettings = useStore((s) => s.updateSettings);
-  const { summary, packs, legend } = model;
+  const { summary, packs, linearPacks, legend } = model;
   const ci = constructionInfo(cabinets);
   const u = settings.units;
 
@@ -129,6 +182,24 @@ export function SheetsView() {
         </div>
       ) : (
         packs.map((pack) => <SheetPack key={pack.stockId} pack={pack} units={u} kerf={settings.kerf} rot={settings.allowRotate} />)
+      )}
+
+      {linearPacks.some((p) => p.boards.length) && (
+        <>
+          <div style={{ marginTop: 10, marginBottom: 12, borderTop: `1px solid ${color.divider}`, paddingTop: 20 }}>
+            <MonoLabel>Hardwood cut plan · by the board, not nested in sheets</MonoLabel>
+          </div>
+          <div style={{ fontFamily: font.mono, fontSize: 13, color: color.inkMuted, marginBottom: 20 }}>
+            <strong style={{ color: color.inkStrong }}>Buy:</strong>{" "}
+            {linearPacks
+              .filter((p) => p.boards.length)
+              .map((p) => `${p.boards.length}× ${fmtLen(p.thickness, u)} × ${fmtLen(p.width, u)}`)
+              .join(" · ")}
+            {" — all "}
+            {fmtLen(linearPacks.find((p) => p.boards.length)!.boardLength, u)} boards
+          </div>
+          {linearPacks.map((pack) => <LinearBoardPack key={`${pack.stockId}-${pack.width}`} pack={pack} units={u} />)}
+        </>
       )}
     </div>
   );

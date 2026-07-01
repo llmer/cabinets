@@ -53,6 +53,8 @@ export const DEFAULT_STOCKS: Record<StockId, Stock> = {
     sheetH: 0,
     costPerSheet: 0,
     costPerFoot: 3.25,
+    // Standard board length the cut layout packs face-frame parts onto (8 ft).
+    stockLength: 96,
   },
 };
 

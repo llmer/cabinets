@@ -91,6 +91,8 @@ export interface Stock {
   costPerSheet: number;
   /** Linear stock only (e.g. hardwood by the board foot of 1×). */
   costPerFoot: number;
+  /** Linear stock only: standard board length (inches) the cut layout packs to. */
+  stockLength?: number;
 }
 
 /* ------------------------------------------------------------------ */
