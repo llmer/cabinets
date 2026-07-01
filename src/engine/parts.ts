@@ -38,6 +38,16 @@ export interface FrameContext {
   sideDrop?: number;
   leftEnd?: boolean;
   rightEnd?: boolean;
+  /**
+   * This bay's LEFT side is a shared run partition supplied by the left
+   * neighbour — suppress it here so the joint carries ONE panel, not two.
+   */
+  shareLeft?: boolean;
+  /**
+   * This bay OWNS the shared run partition on its RIGHT — emit it once for the
+   * joint (its neighbour drops the matching side).
+   */
+  shareRight?: boolean;
 }
 
 const SOLO_FRAME: FrameContext = { emitFaceFrame: true };
@@ -61,7 +71,10 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
   const W = c.width;
   const D = c.depth;
   const boxH = boxHeight(c, s);
-  const interiorW = r3(W - 2 * t);
+  // Interior width loses a full panel per own side, but only HALF a panel where a
+  // run shares that side — the shared partition is centred on the joint, so the
+  // interior carcass panels reach it (matching the 3D scene, no cut-list drift).
+  const interiorW = r3(W - (frame.shareLeft ? t / 2 : t) - (frame.shareRight ? t / 2 : t));
   const cDepth = r3(D - bt);
   const framed = isFramed(c);
   const openBox = isOpenBox(c);
@@ -93,15 +106,18 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
   // On an exposed end of a face-frame run, the end panel drops past the box
   // bottom to the frame line so the side profile matches the frame height.
   const drop = frame.sideDrop ?? 0;
-  const exposedEnds = drop > 0 ? (frame.leftEnd ? 1 : 0) + (frame.rightEnd ? 1 : 0) : 0;
-  if (exposedEnds > 0) {
-    const interior = 2 - exposedEnds;
-    if (interior > 0) add("Side panel", interior, boxH, cd, "carcass", boxH);
-    const endH = r3(boxH + drop);
-    add("End panel", exposedEnds, endH, cd, "carcass", endH);
-  } else {
-    add("Side panel", 2, boxH, cd, "carcass", boxH);
-  }
+  const endH = r3(boxH + drop);
+  // Emit the two box sides individually so a run can share a joint partition. An
+  // exposed end drops to the frame line; a shared joint is supplied ONCE by the
+  // left bay (as its right "Shared partition") and dropped on the right bay's
+  // left side. Un-shared, both sides merge back to the plain "Side panel" ×2.
+  const emitSide = (isEnd: boolean, shared: boolean, suppress: boolean) => {
+    if (suppress) return; // the neighbour supplies the shared partition
+    if (isEnd && drop > 0) add("End panel", 1, endH, cd, "carcass", endH);
+    else add(shared ? "Shared partition" : "Side panel", 1, boxH, cd, "carcass", boxH);
+  };
+  emitSide(!!frame.leftEnd, false, !!frame.shareLeft);
+  emitSide(!!frame.rightEnd, !!frame.shareRight, false);
   if (openBox) {
     if (c.type === "base") add("Top stretcher", 2, interiorW, 4, "carcass", "none");
     else add("Top", 1, interiorW, cd, "carcass", interiorW);

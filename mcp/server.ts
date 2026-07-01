@@ -513,6 +513,7 @@ server.registerTool(
       allowRotate: z.boolean().optional(),
       continuousFaceFrame: z.boolean().optional(),
       separateBase: z.boolean().optional(),
+      sharedPartitions: z.boolean().optional(),
       includeDrawerBoxes: z.boolean().optional(),
       upperBottom: z.number().min(0).max(120).optional(),
       counterH: z.number().min(0).max(60).optional(),

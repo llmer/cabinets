@@ -185,6 +185,50 @@ describe("cabinetBuildParts — lockstep with the run-model face-frame changes",
   });
 });
 
+describe("cabinetBuildParts — full-depth carcass (front flush, captured back)", () => {
+  // Pins the carcass depth/position so a closed box's front sits at the front
+  // plane (flush with the front stretcher + face frame) and the applied back is
+  // captured inset at the rear — not a recessed front or a protruding full-width
+  // back. This geometry has no other automated coverage (the Three.js scene
+  // can't run headless), so these assertions are the guard against regressions.
+  const matT = 0.75; // carcass ply thickness in DEFAULT_SETTINGS
+  const backT = 0.75; // applied-back ply thickness
+  const c = makeCabinet("base", "B", { frontStyle: "doors", doorCount: 2, toeKick: false, depth: 24 });
+  const D = c.depth;
+  const parts = cabinetBuildParts(c, S);
+
+  it("runs the side panels the FULL depth — rear (0) to the front plane (D)", () => {
+    const sides = onStage(parts, "sides");
+    expect(sides).toHaveLength(2);
+    for (const s2 of sides) {
+      expect(s2.box[4]).toBeCloseTo(0, 5); // rear
+      expect(s2.box[5]).toBeCloseTo(D, 5); // front plane — no 3/4" recess
+    }
+  });
+
+  it("sits the front top stretcher flush at the front plane, 4\" deep", () => {
+    const carc = onStage(parts, "carcass").filter((p) => p.kind === "carcass");
+    const front = carc.find((p) => Math.abs(p.box[5] - D) < 0.01 && Math.abs(p.box[5] - p.box[4] - 4) < 0.01);
+    expect(front).toBeTruthy(); // z = [D-4, D]
+    // paired with a rear stretcher against the back at z = [0, 4]
+    expect(carc.some((p) => Math.abs(p.box[4]) < 0.01 && Math.abs(p.box[5] - 4) < 0.01)).toBe(true);
+  });
+
+  it("captures the applied back INSET between the sides, tucked below the top stretcher", () => {
+    const back = ofKind(parts, "back");
+    expect(back).toHaveLength(1);
+    const b = back[0];
+    expect(b.box[0]).toBeCloseTo(matT, 5); // inset a side thickness from the left
+    expect(b.box[1]).toBeCloseTo(c.width - matT, 5); // and from the right — NOT x0..x1
+    expect(b.box[4]).toBeCloseTo(0, 5); // rear face at the back
+    expect(b.box[5]).toBeCloseTo(backT, 5); // 3/4" thick, flush inside the full-depth sides
+    // its top stops BELOW the top back stretcher, which owns the top-rear corner
+    const carc = onStage(parts, "carcass").filter((p) => p.kind === "carcass");
+    const yTop = Math.max(...carc.map((p) => p.box[3]));
+    expect(b.box[3]).toBeLessThan(yTop - 0.5);
+  });
+});
+
 describe("cabinetBuildParts — shelves appear in a plain door box", () => {
   it("emits one shelf part per shelf at the `shelves` stage", () => {
     const c = makeCabinet("wall", "W", { frontStyle: "doors", doorCount: 2, shelves: 2 });

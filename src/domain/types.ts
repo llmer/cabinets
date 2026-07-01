@@ -132,6 +132,16 @@ export interface Settings {
    */
   separateBase: boolean;
   /**
+   * Within a continuous face-frame run, join adjacent bays that line up onto ONE
+   * shared 3/4" partition instead of two butted side panels — so the shared stile
+   * straddles a single panel with a landing on each side (how a run built as one
+   * carcass is really made). Only merges a joint where both bays match: same floor
+   * + top and the same open/closed back (so the shared panel's depth is the same).
+   * A toe-kicked bay beside a floor-standing one keeps its own side. Needs
+   * `continuousFaceFrame`. Off = every box carries both of its own sides.
+   */
+  sharedPartitions: boolean;
+  /**
    * Height of the bottom of the face frame off the finished floor (inches).
    * The frame drops to here over a toe-kicked run, overhanging the recessed
    * toe-kick fascia below it. Only meaningful with a toe kick present.

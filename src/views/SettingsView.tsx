@@ -139,6 +139,10 @@ export function SettingsView() {
             <input type="checkbox" checked={settings.separateBase} onChange={(e) => updateSettings({ separateBase: e.target.checked })} />
             Separate toe-kick base (ladder + fascia)
           </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.sharedPartitions} onChange={(e) => updateSettings({ sharedPartitions: e.target.checked })} />
+            Shared partitions between joined bays
+          </label>
         </div>
         <div style={grid3}>
           {dimField("faceFrameFloorGap", "Frame off floor", 0, 8)}
