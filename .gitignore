@@ -6,3 +6,5 @@ dist-ssr
 _design_reference
 .vite
 coverage
+live.cabinets.json
+live.cabinets.json.tmp-*

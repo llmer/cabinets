@@ -47,12 +47,47 @@ Verify it end-to-end at any time:
 npm run mcp:smoke   # spawns the server, drives a full designer→builder round-trip
 ```
 
+## Autosave + live preview
+
+Edits **autosave** — you don't call `save_project` while designing. Every
+mutation writes the project back to disk, mirroring the browser app's
+localStorage autosave. Two targets, both optional:
+
+- **working file** — what `open_project` / `save_project` track (`CABINETS_FILE`
+  env, or the file you opened). `save_project` is only for *save-as / export*.
+- **live file** — a preview file the dev server watches (`CABINETS_LIVE_FILE`
+  env, default `live.cabinets.json`; set in this repo's `.mcp.json`).
+
+**See the agent's work live in the browser:**
+
+```bash
+npm run dev        # http://localhost:5173  (watches live.cabinets.json)
+```
+
+Then just talk to the agent. Every change it makes streams into the running app
+— layout, cut list, sheets, 3D all update in real time, no reload, no Import.
+The bridge is a **dev-only Vite plugin** (`src/dev/cabinetsLivePlugin.ts`) that
+pushes the file over Vite's WebSocket to a listener in the app
+(`src/state/liveSync.ts` → `store.syncProject`). It's `apply: "serve"`, so the
+production build never sees it.
+
+```
+agent → tool call → session mutation → autosave live.cabinets.json
+                                              │ (Vite watches)
+                                              ▼  WebSocket push
+                                    browser store.syncProject → live re-render
+```
+
+You're watching, not co-editing: your own browser edits aren't written to the
+file, so the next agent change overwrites them (undo is available). To keep a
+design, `save_project('mykitchen.cabinets.json')`.
+
 ## Tools
 
 **Project lifecycle**
-- `open_project { path }` — load + migrate a `.cabinets.json` and make it current.
-- `new_project { name?, empty? }` — start fresh (seeded, or blank).
-- `save_project { path? }` — write the project back to disk (defaults to the opened file).
+- `open_project { path }` — load + migrate a `.cabinets.json`; that file becomes the autosave target.
+- `new_project { name?, empty?, path? }` — start fresh (seeded, or blank); `path` sets the autosave file.
+- `save_project { path? }` — **save-as / export** only; edits autosave, so you rarely need this.
 - `get_project` — the raw project JSON.
 - `project_summary` — cabinets, runs, sheets + yield, hardware, face-frame footage, cost.
 - `rename_project { name }`.

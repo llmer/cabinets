@@ -184,9 +184,23 @@ step); `.mcp.json` registers it for MCP clients. `npm run mcp:smoke` drives the
 live server end-to-end. Formatters (`mcp/format.ts`) and the glossary
 (`mcp/reference.ts`) turn the model into agent-readable text — they never recompute
 domain math, same rule as the views. `mcp/` is in the root `tsconfig.json` include,
-so `npm run typecheck`/`build` cover it, and it is deliberately outside the vitest
-`include` (its check is the subprocess smoke run). Only JSON-RPC goes to stdout;
-logs go to stderr.
+so `npm run typecheck`/`build` cover it; vitest also runs `mcp/**/*.test.ts` (the
+session autosave suite), while the full stdio round-trip is the `npm run mcp:smoke`
+subprocess check. Only JSON-RPC goes to stdout; logs go to stderr.
+
+### Autosave + live preview
+
+Every mutation autosaves the project to disk (`CabinetSession.persist()` writes the
+working file — from `CABINETS_FILE` / open / save — plus a mirror to the
+`CABINETS_LIVE_FILE`), mirroring the app's localStorage autosave, so `save_project`
+is only for save-as/export. When `npm run dev` is running, the **dev-only** Vite
+plugin `src/dev/cabinetsLivePlugin.ts` watches the live file and pushes it over the
+HMR WebSocket to `src/state/liveSync.ts`, which folds it into the store via
+`syncProject` (keeps the current view + selection, pushes undo so a live overwrite is
+recoverable). The plugin is `apply:"serve"` and the listener is dynamically imported
+behind `import.meta.hot`, so the production build never includes either — the
+`.mcp.json` sets `CABINETS_LIVE_FILE=live.cabinets.json` (gitignored) and Vite watches
+the same default.
 
 ## Domain caveat
 
