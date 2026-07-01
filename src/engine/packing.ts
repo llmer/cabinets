@@ -127,3 +127,84 @@ export function packStock(
     usedArea,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* Linear (1D) nesting — hardwood boards cut to length                 */
+/* ------------------------------------------------------------------ */
+
+/** One part to cut from a board (a length, tagged like a PackRect). */
+export interface LinearItem {
+  length: number;
+  color: string;
+  label: string;
+  part: string;
+}
+
+/** A part placed on a board at a start offset. */
+export interface LinearCut extends LinearItem {
+  /** Start position along the board (inches). */
+  offset: number;
+}
+
+/** One physical board with its cuts laid out end to end (kerf between). */
+export interface LinearBoard {
+  cuts: LinearCut[];
+  /** End of the last cut — board length minus this is the drop/waste. */
+  used: number;
+}
+
+export interface LinearPack {
+  stockId: string;
+  label: string;
+  /** Cross-section of this run of boards — one pack per distinct profile. */
+  thickness: number;
+  width: number;
+  /** Standard stock length one board is cut from (inches). */
+  boardLength: number;
+  boards: LinearBoard[];
+  /** Parts longer than a whole board — can't be cut from one. */
+  oversize: LinearItem[];
+  /** Total length of placed parts (inches), excluding kerf + drops. */
+  usedLength: number;
+}
+
+/**
+ * First-fit-decreasing 1D bin packing: lay each linear part onto the first
+ * board with room, else start a new board. A saw kerf is consumed between
+ * adjacent cuts on a board. Parts longer than a board are reported oversize.
+ * Mirrors `packStock` for sheet goods, one dimension down.
+ */
+export function packLinear(
+  items: LinearItem[],
+  boardLength: number,
+  kerf: number,
+): { boards: LinearBoard[]; oversize: LinearItem[]; usedLength: number } {
+  const sorted = items.slice().sort((a, b) => b.length - a.length);
+  const boards: LinearBoard[] = [];
+  const oversize: LinearItem[] = [];
+
+  for (const it of sorted) {
+    if (it.length > boardLength + EPS) {
+      oversize.push(it);
+      continue;
+    }
+    let placed = false;
+    for (const b of boards) {
+      const lead = b.cuts.length ? kerf : 0;
+      if (b.used + lead + it.length <= boardLength + EPS) {
+        const offset = b.used + lead;
+        b.cuts.push({ ...it, offset });
+        b.used = offset + it.length;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) boards.push({ cuts: [{ ...it, offset: 0 }], used: it.length });
+  }
+
+  const usedLength = boards.reduce(
+    (a, b) => a + b.cuts.reduce((c, x) => c + x.length, 0),
+    0,
+  );
+  return { boards, oversize, usedLength };
+}

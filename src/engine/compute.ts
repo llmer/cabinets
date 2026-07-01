@@ -9,7 +9,7 @@ import {
   hardwareCost,
 } from "./hardware";
 import { typeLabel } from "./labels";
-import { PackRect, StockPack, packStock } from "./packing";
+import { LinearItem, LinearPack, PackRect, StockPack, packLinear, packStock } from "./packing";
 import { FrameContext, bandingInchesPerPiece, genParts, mergeParts } from "./parts";
 import { Run, membersSharePartition, runsOf } from "./runs";
 import { genBaseParts, genRunFrameParts } from "./runParts";
@@ -73,6 +73,8 @@ export interface Model {
   cutGroups: CutGroup[];
   stepGroups: StepGroup[];
   packs: StockPack[];
+  /** Linear (1D) cut layout for each hardwood/linear stock. */
+  linearPacks: LinearPack[];
   summary: Summary;
   cost: CostBreakdown;
   legend: Legend[];
@@ -109,6 +111,9 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
   let frameLFInches = 0;
   let counts: HardwareCounts = { ...ZERO_COUNTS };
   const areaByStock = new Map<string, number>();
+  // Linear parts (hardwood face frame) grouped by stock + cross-section width, so
+  // each board profile (3/4"×1 1/2", 3/4"×2", …) gets its own cut layout.
+  const linearGroups = new Map<string, { stockId: string; width: number; items: LinearItem[] }>();
 
   /**
    * Funnel one part into every accumulator (piece count, banding, hardwood feet,
@@ -120,6 +125,15 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     bandLFInches += p.qty * bandingInchesPerPiece(p);
     if (p.linear) {
       frameLFInches += p.qty * p.length;
+      const key = `${p.stockId}|${p.width}`;
+      let g = linearGroups.get(key);
+      if (!g) {
+        g = { stockId: p.stockId, width: p.width, items: [] };
+        linearGroups.set(key, g);
+      }
+      for (let i = 0; i < p.qty; i++) {
+        g.items.push({ length: p.length, color, label, part: p.name });
+      }
     } else {
       areaByStock.set(
         p.stockId,
@@ -245,6 +259,31 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     oversize += result.oversize.length;
   }
 
+  // Lay each linear profile out on standard boards — the face-frame cut plan,
+  // one run of boards per cross-section so you know how much of each width to
+  // buy. Board length comes from the stock (default 8 ft); a part longer than a
+  // board is oversize, same as a sheet part that won't fit.
+  const linearPacks: LinearPack[] = [];
+  const groups = [...linearGroups.values()].sort(
+    (a, b) => a.stockId.localeCompare(b.stockId) || a.width - b.width,
+  );
+  for (const g of groups) {
+    const stock = s.stocks[g.stockId];
+    const boardLength = stock.stockLength || 96;
+    const result = packLinear(g.items, boardLength, s.kerf);
+    linearPacks.push({
+      stockId: g.stockId,
+      label: stock.label,
+      thickness: stock.thickness,
+      width: g.width,
+      boardLength,
+      boards: result.boards,
+      oversize: result.oversize,
+      usedLength: result.usedLength,
+    });
+    oversize += result.oversize.length;
+  }
+
   const totalArea = [...areaByStock.values()].reduce((a, x) => a + x, 0);
   const yieldPct = totalSheetCapacity
     ? Math.round((totalUsedArea / totalSheetCapacity) * 100)
@@ -281,7 +320,7 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     frameLF: Math.ceil(frameLFInches / 12),
   };
 
-  return { cabinetParts, cutGroups, stepGroups, packs, summary, cost, legend };
+  return { cabinetParts, cutGroups, stepGroups, packs, linearPacks, summary, cost, legend };
 }
 
 /** Hardware cost alone (handy for tests / summaries). */
