@@ -105,6 +105,28 @@ extracted `ingestPart()` and appear as synthetic `"Run"` cut groups. Toggled by
 and 2D (`Elevation`/`cabFace`) renderers re-derive the same run grouping so the
 shared half-stiles and side-recessed base line up with the cut list.
 
+### Parallel geometry — keep the FOUR derivations in lockstep
+
+The same cabinet/run geometry is re-derived independently in four places, and
+they MUST agree. A change to one that skips the others is a silent bug — the
+**build walkthrough drifted exactly this way** (it kept a 1½″ top rail and the
+old plinth after the run model landed). The four:
+
+1. **Cut list (source of truth for dimensions)** — `engine/parts.ts:genParts`
+   + `engine/runParts.ts` (`genRunFrameParts` / `genBaseParts`).
+2. **Main 3D** — `three/CabinetScene.ts:addCabinet3D` (whole-run render).
+3. **Build-walkthrough 3D** — `three/buildModel.ts:cabinetBuildParts`, a
+   SEPARATE per-cabinet generator that mirrors `addCabinet3D` (it also feeds the
+   per-step build narration in `engine/steps.ts`).
+4. **2D elevation** — `views/cabFace.tsx` + `views/Elevation.tsx`.
+
+Rule: any change to face-frame / base / opening / desk geometry (rail widths,
+frame bottoms, the drawer deck, side recesses, …) must be applied to **all four**
+and pinned with colocated golden tests — `engine/*.test.ts` for the cut list and
+`three/buildModel.test.ts` for the walkthrough (it asserts the top-rail height,
+the frame-floor drop, the side-recessed base and the desk deck). Always run
+`npm run build && npm test` before committing; both must be green.
+
 ### Two orthogonal cabinet axes
 
 `construction` (`frameless` | `framed`) and `overlay` / front-fit (`full` |
