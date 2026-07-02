@@ -142,6 +142,12 @@ describe("genSteps", () => {
     const frameStep = grp.steps.find((st) => /ONE continuous/i.test(st.t));
     expect(frameStep).toBeTruthy();
     expect(frameStep!.t).toMatch(/not a frame per box/i);
+    // the frame is built from separate pieces: cut -> connect -> attach, not milled as one
+    const ff = grp.steps.filter((st) => st.stage === "faceFrame");
+    expect(ff).toHaveLength(3);
+    expect(ff[0].t).toMatch(/^Cut the face-frame members/i);
+    expect(ff[1].t).toMatch(/NOT milled from one board|separate pieces/i);
+    expect(ff[2].t).toMatch(/^Attach the assembled frame/i);
   });
 
   it("genRunSteps uses overlay (not inset) door wording for a full-overlay framed run", () => {
