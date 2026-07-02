@@ -50,6 +50,12 @@ interface FlatStep {
   cabinet?: Cabinet;
   /** For a RUN-level group: the whole run's cabinets, rendered together in 3D. */
   runCabinets?: Cabinet[];
+  /**
+   * For a RUN-level step: whether the face frame is ATTACHED to the run by this
+   * step (true from the "attach the frame" beat onward). Drives whether the
+   * whole-run 3D shows joined carcasses or the fitted frame + fronts.
+   */
+  runFrameOn?: boolean;
 }
 
 export function BuildView() {
@@ -83,6 +89,9 @@ export function BuildView() {
         const m = cabinetParts.find((c) => c.cabinet.id === id);
         return m ? [m.cabinet] : [];
       });
+      // The frame is fitted at the LAST faceFrame beat (cut → connect → attach),
+      // so the run render shows carcasses until then, the fitted frame after.
+      const attachIdx = runCabinets ? sg.steps.map((st) => st.stage).lastIndexOf("faceFrame") : -1;
       sg.steps.forEach((step, idxInGroup) => {
         out.push({
           gi,
@@ -99,6 +108,7 @@ export function BuildView() {
           framed,
           cabinet,
           runCabinets,
+          runFrameOn: runCabinets && attachIdx >= 0 ? idxInGroup >= attachIdx : undefined,
         });
       });
     });
@@ -525,6 +535,7 @@ function GuidedWalkthrough({
               <BuildStepScene
                 cabinet={cur.cabinet}
                 runCabinets={cur.runCabinets}
+                runFrameOn={cur.runFrameOn}
                 settings={settings}
                 stage={cur.step.stage}
                 revealedStages={flat

@@ -9,6 +9,8 @@ export interface BuildStepSceneProps {
   cabinet?: Cabinet;
   /** For a run-level step: render the whole assembled run instead of one box. */
   runCabinets?: Cabinet[];
+  /** Run step only: is the face frame attached yet? Carcass view until it is. */
+  runFrameOn?: boolean;
   settings: Settings;
   /** The current step's assembly stage — drives which parts glow. */
   stage: BuildStage;
@@ -25,18 +27,6 @@ function interiorStage(stage: BuildStage): boolean {
   return stage === "drawers" || stage === "shelves";
 }
 
-/**
- * A RUN step opens on the joined carcasses and only shows the fitted frame +
- * fronts once the frame is glued on — so the whole-run render (which has no
- * per-part staging) still reads as a progression. Carcass for the join/base
- * beats and the "mill the frame on the bench" beat (the FIRST faceFrame step,
- * before it is fitted); the finished run from the "glue it on" beat onward.
- */
-function runStepCarcass(stage: BuildStage, revealed: BuildStage[]): boolean {
-  if (stage === "base") return true;
-  if (stage === "faceFrame") return revealed.filter((s) => s === "faceFrame").length <= 1;
-  return false;
-}
 
 /**
  * The build-tab's per-step 3D render. Mounts a {@link CabinetScene} in
@@ -48,6 +38,7 @@ function runStepCarcass(stage: BuildStage, revealed: BuildStage[]): boolean {
 export function BuildStepScene({
   cabinet,
   runCabinets,
+  runFrameOn,
   settings,
   stage,
   revealedStages,
@@ -60,11 +51,11 @@ export function BuildStepScene({
   const sceneRef = useRef<CabinetScene | null>(null);
   const [failed, setFailed] = useState(false);
   const revealedKey = revealedStages.join(",");
-  // A run step opens on the joined carcasses (join/base + milling), then shows
-  // the fitted frame + fronts once it is glued on; a box step follows the
-  // interior/cutaway rule.
+  // A run step shows the joined carcasses until the frame is attached (cut →
+  // connect happen on the bench), then the fitted frame + fronts; a box step
+  // follows the interior/cutaway rule.
   const [cutaway, setCutaway] = useState(
-    isRun ? runStepCarcass(stage, revealedStages) : interiorStage(stage),
+    isRun ? !runFrameOn : interiorStage(stage),
   );
 
   // create once
@@ -84,11 +75,11 @@ export function BuildStepScene({
     };
   }, []);
 
-  // Default the cutaway on/off as the step's stage changes (user can override).
+  // Default the cutaway on/off as the step changes (user can override).
   useEffect(() => {
-    setCutaway(isRun ? runStepCarcass(stage, revealedStages) : interiorStage(stage));
+    setCutaway(isRun ? !runFrameOn : interiorStage(stage));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, focusKey, revealedKey]);
+  }, [stage, focusKey, revealedKey, runFrameOn]);
 
   // push the focused cabinet (or whole run) + stage on any relevant change
   useEffect(() => {

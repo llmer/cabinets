@@ -401,17 +401,22 @@ export function genRunSteps(
         : `Build the ${fmtLen(s.toeKick, u)}-tall toe-kick base under the toe-kicked cabinets, level it and set the run on top; the floor-standing bays sit straight on the floor.`,
       "base",
     );
-  // 3. Mill + assemble the ONE continuous face frame for the whole run.
+  // 3. Cut the individual frame members to length.
   push(
-    `Mill and assemble ONE continuous hardwood face frame for the whole ${runW} run — a full-run ${fmtLen(ffTop, u)} top rail, a ${fmtLen(ffw, u)} stile SHARED at every joint between bays, a bottom rail over each toe-kicked span, and the mid rails where fronts stack (every piece is in the "${run.members.length}-bay" Run cut list). Pocket-screw it flat and dead square on the bench — one frame, not a frame per box.`,
+    `Cut the face-frame members to length from the hardwood — the full-run ${fmtLen(ffTop, u)} top rail, the ${fmtLen(ffw, u)} stiles (one SHARED at every bay joint)${anyToeKick ? ", the bottom rail over each toe-kicked span" : ""}, and the mid rails where the fronts stack. Every piece is listed in the ${run.members.length}-bay Run cut list.`,
     "faceFrame",
   );
-  // 4. Fit that one frame onto the assembled run.
+  // 4. Connect the separate members into ONE frame on the bench.
   push(
-    `Glue and pin the assembled face frame onto the FRONT of the whole run at once, flush to the outside edges${anyToeKick ? `; it laps down over the toe-kick base to ~${fmtLen(s.faceFrameFloorGap, u)} off the floor` : ""}. This one frame ties all ${run.members.length} bays together.`,
+    `Connect the members into ONE continuous frame for the whole ${runW} run on the bench — pocket-screw (or dowel) every joint, the long rails running the full width with the stiles captured between them and shared at every bay joint. It is built up from separate pieces, NOT milled from one board, so clamp it flat and dead square — one frame, not a frame per box.`,
     "faceFrame",
   );
-  // 5. Hang the doors — inset in the openings, or proud for full overlay.
+  // 5. Attach the assembled frame to the face of the run.
+  push(
+    `Attach the assembled frame to the FRONT of the whole run — glue and pin it on flush to the outside edges${anyToeKick ? `; it laps down over the toe-kick base to ~${fmtLen(s.faceFrameFloorGap, u)} off the floor` : ""}. This one frame ties all ${run.members.length} bays together.`,
+    "faceFrame",
+  );
+  // 6. Hang the doors — inset in the openings, or proud for full overlay.
   const allInset = members.every((m) => m.geometry.inset);
   if (doors > 0)
     push(
@@ -420,7 +425,7 @@ export function genRunSteps(
         : `Hang the ${doors} door${doors > 1 ? "s" : ""} proud over the frame — bore the hinge cups 22.5 mm in from each door edge, mount them on full-overlay hinges, and dial an even 1/8" reveal between the fronts.`,
       "doors",
     );
-  // 6. Attach the drawer fronts — flush inset, or proud for full overlay.
+  // 7. Attach the drawer fronts — flush inset, or proud for full overlay.
   if (drw > 0)
     push(
       allInset
@@ -428,7 +433,7 @@ export function genRunSteps(
         : `Attach the ${drw} drawer front${drw > 1 ? "s" : ""} proud of the frame — tack each to an even 1/8" reveal between the fronts, then screw from inside the box.`,
       "drawerFronts",
     );
-  // 7. Fit the pulls across the run.
+  // 8. Fit the pulls across the run.
   if (doors + drw > 0)
     push(
       `Mark, drill and fasten the ${doors + drw} pull${doors + drw > 1 ? "s" : ""} across the run in a consistent line. Stand back — the run is done.`,
