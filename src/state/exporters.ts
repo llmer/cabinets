@@ -52,6 +52,20 @@ export function sheetsCsv(model: Model): string {
           +pl.h.toFixed(3),
         ]);
       }
+      // Store-breakdown strips ride along as pseudo-rows: full sheet width,
+      // H = the width to ask the store's panel saw for.
+      (sheet.strips || []).forEach((st, j, strips) => {
+        rows.push([
+          pack.label,
+          i + 1,
+          st.offcut ? "— offcut —" : j < strips.length - 1 ? "— store rip strip —" : "— last strip —",
+          "",
+          0,
+          +st.y.toFixed(3),
+          pack.sheetW,
+          +st.height.toFixed(3),
+        ]);
+      });
     });
   }
   return csvRows(rows);
@@ -67,6 +81,10 @@ export function shoppingListText(model: Model, s: Settings): string {
     if (pack.sheets.length === 0) continue;
     lines.push(`${pack.sheets.length} × ${pack.label} (${fmtLen(pack.sheetH, s.units)} × ${fmtLen(pack.sheetW, s.units)})`);
   }
+  if (model.summary.storeCuts > 0)
+    lines.push(
+      `(${model.summary.storeCuts} store panel-saw rips planned — bring the per-sheet rip widths from the Sheets page)`,
+    );
   if (summary.frameLF > 0)
     lines.push(
       `${summary.frameLF} ft × ${fmtLen(s.frameWidth, s.units)} hardwood (face-frame stiles/rails; ${fmtLen(s.faceFrameTop, s.units)} top rails)`,

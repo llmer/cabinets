@@ -77,7 +77,10 @@ Itemized material + hardware cost estimate. Export to **CSV**, a plain-text
 
 **Sheets** — first-fit-decreasing nesting with saw-kerf accounting and optional
 grain rotation, shown per material. Oversize-part warnings. Export placements to
-CSV.
+CSV. Optional **store breakdown** mode plans the full-length rips a store's
+panel saw (e.g. Home Depot) makes before the sheet leaves the store — strips
+are easier to haul, and every part keeps a configurable trim allowance clear of
+each rough store cut so you re-cut those edges clean with a track saw at home.
 
 **Build** — ordered assembly steps per cabinet (32 mm drilling, joinery, banding,
 hanging, hinges, slides, shelves) plus a consolidated shopping list.

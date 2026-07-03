@@ -92,6 +92,10 @@ export const DEFAULT_SETTINGS: Settings = {
   counterH: 36,
   kerf: 0.125,
   allowRotate: true,
+  // Store panel-saw breakdown is a per-shopping-trip choice, so it starts off;
+  // 1/2" of trim is a comfortable single clean-up pass with a track saw.
+  storeBreakdown: false,
+  storeTrim: 0.5,
   frameWidth: 1.5,
   faceFrameTop: 2,
   construction: "frameless",

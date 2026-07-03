@@ -4,7 +4,8 @@ import { renderToString } from "react-dom/server";
 import { useStore, ViewId } from "@/state/store";
 import { LayoutView } from "@/views/LayoutView";
 import { CutListView } from "@/views/CutListView";
-import { SheetsView } from "@/views/SheetsView";
+import { SheetPack, SheetsView } from "@/views/SheetsView";
+import { compute } from "@/engine/compute";
 import { BuildView } from "@/views/BuildView";
 import { SettingsView } from "@/views/SettingsView";
 import { Header } from "@/components/Header";
@@ -36,6 +37,22 @@ describe("app render smoke test", () => {
       expect(html.length).toBeGreaterThan(50);
     });
   }
+
+  it("renders rip strips in the sheet diagrams when store breakdown is on", () => {
+    // renderToString reads zustand's server snapshot, pinned at store creation,
+    // so a flipped setting can't reach the full SheetsView here — render the
+    // pure SheetPack with a breakdown-mode model instead.
+    const { cabinets, settings } = useStore.getState().project;
+    const model = compute(cabinets, { ...settings, storeBreakdown: true });
+    expect(model.summary.storeCuts).toBeGreaterThan(0);
+    const pack = model.packs.find((p) => p.sheets.length > 0)!;
+    expect(pack.sheets[0].strips!.length).toBeGreaterThan(1);
+    const html = renderToString(
+      createElement(SheetPack, { pack, units: "in", kerf: settings.kerf, rot: settings.allowRotate }),
+    );
+    expect(html).toContain("rips "); // the ✂ caption under each sheet
+    expect(html).toContain("dashed"); // the rip cut lines across the diagram
+  });
 
   it("reflects mutations through the store", () => {
     const before = useStore.getState().project.cabinets.length;

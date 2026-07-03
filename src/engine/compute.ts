@@ -43,6 +43,8 @@ export interface Summary {
   baseRunRaw: number;
   wallRunRaw: number;
   sheetCount: number;
+  /** Total store panel-saw rips planned across all sheets (0 when off). */
+  storeCuts: number;
   yieldPct: number;
   yieldStr: string;
   pieces: number;
@@ -259,10 +261,18 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
   const stockIds = [...rectsByStock.keys()].sort(
     (a, b) => s.stocks[b].thickness - s.stocks[a].thickness,
   );
+  let storeCuts = 0;
   for (const stockId of stockIds) {
     const stock = s.stocks[stockId];
     const rects = rectsByStock.get(stockId)!;
-    const result = packStock(rects, stock.sheetW, stock.sheetH, s.kerf, s.allowRotate);
+    const result = packStock(
+      rects,
+      stock.sheetW,
+      stock.sheetH,
+      s.kerf,
+      s.allowRotate,
+      s.storeBreakdown ? { trim: s.storeTrim } : undefined,
+    );
     const sheetArea = stock.sheetW * stock.sheetH;
     packs.push({
       stockId,
@@ -278,6 +288,9 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     totalUsedArea += result.usedArea;
     totalSheetCapacity += result.sheets.length * sheetArea;
     oversize += result.oversize.length;
+    // n strips = n-1 rips between them, +1 when the last rip frees an offcut —
+    // which is exactly strips.length - 1 either way.
+    for (const sh of result.sheets) if (sh.strips) storeCuts += sh.strips.length - 1;
   }
 
   // Lay each linear profile out on standard boards — the face-frame cut plan,
@@ -322,6 +335,7 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     baseRunRaw,
     wallRunRaw,
     sheetCount,
+    storeCuts,
     yieldPct,
     yieldStr: yieldPct + "%",
     pieces,

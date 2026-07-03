@@ -128,6 +128,23 @@ export const TOPICS: Record<string, Topic> = {
       "Read the layout with get_sheets; the audit flags a low yield with the levers.",
     ].join("\n"),
   },
+  store_breakdown: {
+    title: "Store breakdown (panel-saw rips)",
+    body: [
+      "With storeBreakdown on, the nester packs each sheet as full-length horizontal",
+      "strips and plans the rip cuts a store's panel saw (e.g. Home Depot) makes",
+      "before the sheet leaves the store — strips are far easier to haul than a",
+      "4×8 sheet, and every part is then track-sawed out of its strip at home.",
+      "Rip widths are asked for IN ORDER, each measured from the freshly cut edge.",
+      "A store cut is rough, so it is never kept as a part edge: every part stays",
+      "at least storeTrim (default 1/2\") clear of each store-cut strip edge,",
+      "leaving material for one clean track-saw pass. Factory sheet edges are",
+      "trusted as-is, same as regular nesting. A leftover wider than 4\" is freed",
+      "as a labelled offcut; smaller remainders stay on the last strip. Expect a",
+      "slightly lower yield / an extra sheet sometimes — that's the trim's cost.",
+      "Settings: storeBreakdown (off by default), storeTrim. See get_sheets.",
+    ].join("\n"),
+  },
   materials: {
     title: "Materials, roles + stock",
     body: [

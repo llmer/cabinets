@@ -1,14 +1,17 @@
 import { color, font } from "@/theme";
 import { constructionInfo } from "@/engine/labels";
 import { fmtLen, toFrac } from "@/engine/units";
-import { LinearPack, StockPack } from "@/engine/packing";
+import { LinearPack, StockPack, ripPlanText } from "@/engine/packing";
 import { useModel } from "@/state/useModel";
 import { useStore } from "@/state/store";
 import { sheetsCsv } from "@/state/exporters";
 import { downloadText } from "@/state/persistence";
 import { Button, MonoLabel, Serif, Swatch, Toggle } from "@/components/ui";
 
-function SheetPack({ pack, units, kerf, rot }: { pack: StockPack; units: "in" | "mm"; kerf: number; rot: boolean }) {
+/** One stock's sheet diagrams. Exported for the render smoke test (SSR reads the
+ *  zustand hook's initial snapshot, so the full view can't render a flipped
+ *  store-breakdown setting — this pure component can). */
+export function SheetPack({ pack, units, kerf, rot }: { pack: StockPack; units: "in" | "mm"; kerf: number; rot: boolean }) {
   void kerf;
   void rot;
   const sc = 430 / pack.sheetW;
@@ -58,7 +61,52 @@ function SheetPack({ pack, units, kerf, rot }: { pack: StockPack; units: "in" | 
                   </div>
                 );
               })}
+              {(sheet.strips || []).map((st, k, strips) =>
+                k < strips.length - 1 ? (
+                  <div
+                    key={`rip${k}`}
+                    title={`store rip · strip of ${toFrac(st.height)}`}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: Math.max(0, (st.y + st.height) * sc - 1),
+                      borderTop: `2px dashed ${color.danger}`,
+                      pointerEvents: "none",
+                    }}
+                  />
+                ) : null,
+              )}
+              {(sheet.strips || [])
+                .filter((st) => st.offcut)
+                .map((st, k) => (
+                  <div
+                    key={`off${k}`}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: st.y * sc,
+                      height: st.height * sc,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontFamily: font.mono,
+                      fontSize: 9,
+                      letterSpacing: ".1em",
+                      color: color.faint,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    OFFCUT · {fmtLen(st.height, units)}
+                  </div>
+                ))}
             </div>
+            {sheet.strips ? (
+              <div style={{ fontFamily: font.mono, fontSize: 10, color: color.danger, marginTop: 5, maxWidth: Wpx }}>
+                ✂ {ripPlanText(sheet.strips, units)}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -131,6 +179,9 @@ export function SheetsView() {
 
   const kerfDelta = (d: number) =>
     updateSettings({ kerf: Math.max(0, +(settings.kerf + d).toFixed(3)) });
+  // Same 0–4" range the Settings field and the MCP schema enforce.
+  const trimDelta = (d: number) =>
+    updateSettings({ storeTrim: Math.min(4, Math.max(0, +(settings.storeTrim + d).toFixed(3))) });
 
   return (
     <div style={{ padding: "30px 36px" }}>
@@ -141,6 +192,7 @@ export function SheetsView() {
           </MonoLabel>
           <Serif style={{ fontSize: 36, marginTop: 2 }}>
             {summary.sheetCount} sheets, {summary.yieldStr} yield.
+            {summary.storeCuts > 0 ? ` ${summary.storeCuts} store rips.` : ""}
           </Serif>
         </div>
         <div className="no-print" style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
@@ -155,11 +207,33 @@ export function SheetsView() {
           <Toggle active={settings.allowRotate} style={{ fontFamily: font.mono, fontSize: 12, padding: "7px 13px" }} onClick={() => updateSettings({ allowRotate: !settings.allowRotate })}>
             {settings.allowRotate ? "Grain: rotation OK" : "Grain: locked"}
           </Toggle>
+          <Toggle active={settings.storeBreakdown} style={{ fontFamily: font.mono, fontSize: 12, padding: "7px 13px" }} onClick={() => updateSettings({ storeBreakdown: !settings.storeBreakdown })}>
+            {settings.storeBreakdown ? "Store rips: ON" : "Store rips: OFF"}
+          </Toggle>
+          {settings.storeBreakdown && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontFamily: font.mono, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", color: color.faint }}>Edge trim</span>
+              <div style={{ display: "flex", border: `1px solid ${color.border}`, borderRadius: 5, overflow: "hidden" }}>
+                <button onClick={() => trimDelta(-0.125)} style={{ border: "none", background: color.panel, padding: "6px 11px", cursor: "pointer", color: color.inkStrong }}>−</button>
+                <span style={{ fontFamily: font.mono, fontSize: 13, minWidth: 56, textAlign: "center", alignSelf: "center" }}>{fmtLen(settings.storeTrim, u)}</span>
+                <button onClick={() => trimDelta(0.125)} style={{ border: "none", background: color.panel, padding: "6px 11px", cursor: "pointer", color: color.inkStrong }}>+</button>
+              </div>
+            </div>
+          )}
           <Button variant="mono" onClick={() => downloadText(`${slug(projectName)}-sheets.csv`, sheetsCsv(model))}>
             Export CSV
           </Button>
         </div>
       </div>
+
+      {settings.storeBreakdown && (
+        <div style={{ fontFamily: font.mono, fontSize: 12, color: color.inkMuted, border: `1px solid ${color.border}`, background: color.panel, borderRadius: 6, padding: "10px 14px", marginBottom: 18 }}>
+          ✂ Store breakdown: have the store&apos;s panel saw rip each sheet into the full-length strips
+          shown (dashed lines) — in order, each width measured from the freshly cut edge. Store cuts
+          are rough: every part keeps {fmtLen(settings.storeTrim, u)} clear of them, so you re-cut each
+          strip edge clean with your track saw at home. Factory sheet edges are used as-is.
+        </div>
+      )}
 
       {summary.oversize > 0 && (
         <div style={{ fontFamily: font.mono, fontSize: 12, color: color.danger, border: `1px solid ${color.danger}`, background: color.panel, borderRadius: 6, padding: "10px 14px", marginBottom: 18 }}>
