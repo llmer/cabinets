@@ -156,6 +156,28 @@ async function main(): Promise<void> {
   const shop = textOf((await client.callTool({ name: "get_shopping_list", arguments: {} })) as never);
   check("get_shopping_list totals a cost", /TOTAL/.test(shop) && /\$/.test(shop));
 
+  // --- shopper: store panel-saw breakdown (rips planned at the store) ---
+  const bdOn = await client.callTool({
+    name: "update_settings",
+    arguments: { storeBreakdown: true, storeTrim: 0.5 },
+  });
+  check("update_settings accepts storeBreakdown + storeTrim", !bdOn.isError && /storeBreakdown/.test(textOf(bdOn as never)));
+
+  const sheetsBd = textOf((await client.callTool({ name: "get_sheets", arguments: {} })) as never);
+  check("get_sheets shows a rip plan per sheet", /✂ rips /.test(sheetsBd), sheetsBd.split("\n").find((l) => l.includes("✂"))?.trim() ?? "");
+  check("get_sheets flags the breakdown + trim", /Store breakdown ON/.test(sheetsBd) && /1\/2"/.test(sheetsBd));
+
+  const sheetsCsvBd = textOf((await client.callTool({ name: "get_sheets", arguments: { format: "csv" } })) as never);
+  check("get_sheets csv carries the strip rows", /store rip strip/.test(sheetsCsvBd));
+
+  const explainBd = await client.callTool({ name: "explain", arguments: { topic: "store_breakdown" } });
+  check("explain store_breakdown topic exists", !explainBd.isError && /panel saw/i.test(textOf(explainBd as never)));
+
+  const bdOff = await client.callTool({ name: "update_settings", arguments: { storeBreakdown: false } });
+  check("update_settings turns breakdown back off", !bdOff.isError);
+  const sheetsPlain = textOf((await client.callTool({ name: "get_sheets", arguments: {} })) as never);
+  check("get_sheets drops the rip plan when off", !/✂/.test(sheetsPlain));
+
   // --- questioner: explain + reference resource ---
   const explain = await client.callTool({ name: "explain", arguments: { topic: "runs" } });
   check("explain runs returns the runs topic", /run/i.test(textOf(explain as never)));

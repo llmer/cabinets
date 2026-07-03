@@ -157,6 +157,19 @@ export interface Settings {
   kerf: number;
   /** Allow parts to rotate 90° when nesting (off = respect grain direction). */
   allowRotate: boolean;
+  /**
+   * Plan each sheet as full-length horizontal strips so the store's panel saw
+   * (e.g. Home Depot) can rip the sheet down before it leaves the store —
+   * lighter to carry, fits in a car. Every part is then track-sawed out of its
+   * strip at home; the store's rough cut is never kept as a part edge.
+   */
+  storeBreakdown: boolean;
+  /**
+   * Extra material left between a part and every store-cut strip edge (inches),
+   * so the rough panel-saw edge can be re-cut clean with a track saw. Factory
+   * sheet edges are trusted, same as regular nesting.
+   */
+  storeTrim: number;
   /** Face-frame stile/rail width (inches). */
   frameWidth: number;
   /** Face-frame TOP rail width (inches) — usually wider than the stiles. */

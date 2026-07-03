@@ -11,6 +11,7 @@ import { AuditReport } from "@/engine/audit";
 import { Model } from "@/engine/compute";
 import { cabinetGeometry } from "@/engine/geometry";
 import { constructionInfo, frontStyleLabel, typeLabel } from "@/engine/labels";
+import { ripPlanText } from "@/engine/packing";
 import { drawerBoxSpecs } from "@/engine/parts";
 import { runsOf } from "@/engine/runs";
 import { fmtLen } from "@/engine/units";
@@ -164,7 +165,8 @@ export function sheetsText(model: Model, s: Settings): string {
     if (pack.sheets.length === 0 && pack.oversize.length === 0) continue;
     lines.push(`${pack.label}: ${pack.sheets.length} sheet(s) of ${L(pack.sheetW, s)} × ${L(pack.sheetH, s)}`);
     pack.sheets.forEach((sh, i) => {
-      lines.push(`   Sheet ${i + 1}: ${sh.placements.length} part(s)`);
+      const rips = sh.strips ? ` · ✂ ${ripPlanText(sh.strips, s.units)}` : "";
+      lines.push(`   Sheet ${i + 1}: ${sh.placements.length} part(s)${rips}`);
     });
     for (const r of pack.oversize) {
       lines.push(`   ⚠ OVERSIZE: ${r.part} (${r.label}) ${L(r.w, s)} × ${L(r.h, s)} — won't fit`);
@@ -172,6 +174,13 @@ export function sheetsText(model: Model, s: Settings): string {
   }
   lines.push("");
   lines.push(`Total: ${model.summary.sheetCount} sheet(s), ${model.summary.yieldStr} yield.`);
+  if (model.summary.storeCuts > 0) {
+    lines.push(
+      `Store breakdown ON — ${model.summary.storeCuts} panel-saw rip(s) across all sheets. ` +
+        `Rip widths are measured from the freshly cut edge, in order. Store cuts are rough: ` +
+        `parts keep ${L(s.storeTrim, s)} clear of them to re-cut clean at home (explain "store_breakdown").`,
+    );
+  }
   return lines.join("\n");
 }
 

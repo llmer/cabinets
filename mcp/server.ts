@@ -499,6 +499,7 @@ server.registerTool(
     description:
       "Patch project-wide settings: reveal, toe kick + recesses, face-frame widths, kerf, " +
       "run frame/base toggles, drawer-box generation, guide heights, units, edge-band price, " +
+      "`storeBreakdown`/`storeTrim` (plan panel-saw rips at the store — explain \"store_breakdown\"), " +
       "and `construction` (the default frameless/framed applied to NEW cabinets).",
     inputSchema: {
       units: z.enum(["in", "mm"]).optional(),
@@ -511,6 +512,8 @@ server.registerTool(
       faceFrameTop: z.number().positive().max(8).optional(),
       kerf: z.number().min(0).max(1).optional(),
       allowRotate: z.boolean().optional(),
+      storeBreakdown: z.boolean().optional(),
+      storeTrim: z.number().min(0).max(4).optional(),
       continuousFaceFrame: z.boolean().optional(),
       separateBase: z.boolean().optional(),
       sharedPartitions: z.boolean().optional(),
@@ -640,7 +643,9 @@ server.registerTool(
   "get_sheets",
   {
     title: "Sheet nesting",
-    description: "How the parts nest onto sheet goods: sheets per stock, yield, oversize flags. format:'csv' for placements.",
+    description:
+      "How the parts nest onto sheet goods: sheets per stock, yield, oversize flags, and the " +
+      "store rip plan per sheet when storeBreakdown is on. format:'csv' for placements.",
     inputSchema: { format: z.enum(["text", "csv"]).optional() },
     annotations: RO,
   },

@@ -126,7 +126,19 @@ export function SettingsView() {
             <input type="checkbox" checked={settings.allowRotate} onChange={(e) => updateSettings({ allowRotate: e.target.checked })} />
             Allow grain rotation when nesting
           </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.storeBreakdown} onChange={(e) => updateSettings({ storeBreakdown: e.target.checked })} />
+            Plan store rip cuts (panel-saw breakdown)
+          </label>
+          {settings.storeBreakdown && dimField("storeTrim", "Store rip trim", 0, 4)}
         </div>
+        {settings.storeBreakdown && (
+          <div style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, marginTop: 10 }}>
+            The sheet optimizer plans full-length rips the store&apos;s panel saw makes for you —
+            easier to haul. Store cuts are rough, so every part keeps the trim allowance clear of
+            them for a clean track-saw re-cut at home.
+          </div>
+        )}
       </Card>
 
       <Card title="Runs & toe-kick base" sub="how joined cabinets share a face frame and a base">

@@ -4,6 +4,8 @@
  * generalized so each physical stock is nested on its own sheet size.
  */
 
+import { fmtLen } from "./units";
+
 export interface PackRect {
   w: number;
   h: number;
@@ -29,9 +31,34 @@ interface Shelf {
   count: number;
 }
 
+/**
+ * One piece a store rip cut produces — a full-length horizontal band of the
+ * sheet. Parts inside it keep at least the trim allowance clear of every
+ * store-cut (rough) edge; only factory sheet edges are trusted as-is.
+ */
+export interface SheetStrip {
+  /** Where the piece starts across the sheet height (inches). */
+  y: number;
+  /** Height of the piece — what you ask the store to rip. */
+  height: number;
+  /** Leftover stock above the last parts strip; carries no parts. */
+  offcut?: boolean;
+}
+
 export interface PackedSheet {
   placements: Placement[];
+  /** Present when store-breakdown mode planned full-length rip cuts. */
+  strips?: SheetStrip[];
 }
+
+/** Store-breakdown mode: rip each sheet into shelf-aligned strips at the store. */
+export interface BreakdownOptions {
+  /** Clean-up allowance kept between a part and each store-cut edge (inches). */
+  trim: number;
+}
+
+/** Don't bother freeing an offcut narrower than this — absorb it into the last strip. */
+const MIN_OFFCUT = 4;
 
 export interface StockPack {
   stockId: string;
@@ -54,6 +81,7 @@ export function packStock(
   sheetH: number,
   kerf: number,
   rot: boolean,
+  breakdown?: BreakdownOptions,
 ): { sheets: PackedSheet[]; oversize: PackRect[]; usedArea: number } {
   const items = rects.slice().sort((a, b) => Math.max(b.w, b.h) - Math.max(a.w, a.h));
   const sheets: Array<PackedSheet & { shelves: Shelf[]; usedH: number }> = [];
@@ -83,7 +111,11 @@ export function packStock(
       }
     }
     for (const [w, h] of orients(it)) {
-      const y = s.usedH + (s.shelves.length ? kerf : 0);
+      // Breakdown mode: a new shelf sits above the planned rip that frees the
+      // shelf below — trim above those parts, the store blade's kerf, then
+      // trim again so no part keeps the rough store-cut edge as its own.
+      const lead = breakdown ? kerf + 2 * breakdown.trim : kerf;
+      const y = s.usedH + (s.shelves.length ? lead : 0);
       if (w <= sheetW + EPS && y + h <= sheetH + EPS) {
         s.shelves.push({ y, x: w, height: h, count: 1 });
         s.usedH = y + h;
@@ -121,11 +153,55 @@ export function packStock(
     0,
   );
 
+  // Turn each sheet's shelves into the store rip plan: one full-length strip
+  // per shelf, the rip line sitting `trim` above the shelf's tallest part.
+  // The rip above the topmost shelf only happens when it frees an offcut
+  // worth keeping; otherwise that strip runs to the factory edge.
+  const stripsFor = (shelves: Shelf[]): SheetStrip[] => {
+    const trim = breakdown!.trim;
+    const strips: SheetStrip[] = [];
+    let start = 0;
+    shelves.forEach((sh, i) => {
+      const cut = sh.y + sh.height + trim;
+      if (i < shelves.length - 1) {
+        strips.push({ y: start, height: cut - start });
+        start = cut + kerf;
+      } else if (cut + kerf + MIN_OFFCUT <= sheetH + EPS) {
+        strips.push({ y: start, height: cut - start });
+        strips.push({ y: cut + kerf, height: sheetH - cut - kerf, offcut: true });
+      } else {
+        strips.push({ y: start, height: sheetH - start });
+      }
+    });
+    return strips;
+  };
+
   return {
-    sheets: sheets.map((s) => ({ placements: s.placements })),
+    sheets: sheets.map((s) =>
+      breakdown
+        ? { placements: s.placements, strips: stripsFor(s.shelves) }
+        : { placements: s.placements },
+    ),
     oversize,
     usedArea,
   };
+}
+
+/**
+ * The instruction line for one sheet's rip plan — what to ask the store for,
+ * in cutting order, each width measured from the freshly cut edge. Shared by
+ * the sheets view and the MCP formatter so the two never drift. The LAST
+ * strip's height is what remains after the final rip, not a rip to request.
+ */
+export function ripPlanText(strips: SheetStrip[], units: "in" | "mm"): string {
+  const cuts = strips.length - 1;
+  if (cuts < 1) return "no rips — carry as-is";
+  const widths = strips
+    .slice(0, cuts)
+    .map((st) => fmtLen(st.height, units))
+    .join(" → ");
+  const last = strips[cuts];
+  return `rips ${widths} · leaves ${fmtLen(last.height, units)}${last.offcut ? " offcut" : ""}`;
 }
 
 /* ------------------------------------------------------------------ */
