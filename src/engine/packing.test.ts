@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, makeCabinet } from "@/domain/defaults";
 import { Settings } from "@/domain/types";
-import { LinearItem, PackRect, packLinear, packStock, ripPlanText } from "./packing";
+import { BoardItem, LinearItem, PackRect, packBoards, packLinear, packStock, ripPlanText } from "./packing";
 import { compute } from "./compute";
 
 const S = DEFAULT_SETTINGS;
 const item = (length: number, label = "x"): LinearItem => ({ length, color: "#000", label, part: "p" });
+const bitem = (length: number, width: number, part = "p"): BoardItem => ({ length, width, color: "#000", label: "x", part });
 const rect = (w: number, h: number, part = "p"): PackRect => ({ w, h, color: "#000", label: "x", part });
 
 describe("packLinear — 1D hardwood cut layout", () => {
@@ -47,6 +48,190 @@ describe("packLinear — 1D hardwood cut layout", () => {
     expect(usedLength).toBeCloseTo(267.25, 5);
     // no board exceeds its length
     for (const b of boards) expect(b.used).toBeLessThanOrEqual(96 + 1e-6);
+  });
+});
+
+describe("packBoards — rip the parts out of the boards on hand", () => {
+  // The maple-v3 kitchen's continuous run frame vs. the boards actually bought:
+  // one 3/4×2 1/2×7' and one 3/4×3 1/2×14'.
+  const MAPLE_ITEMS: BoardItem[] = [
+    bitem(74, 2, "Face-frame top rail"),
+    bitem(16.75, 2.75, "Face-frame bottom rail"),
+    bitem(26.5, 1.5, "Face-frame stile"),
+    bitem(32.5, 1.5, "Face-frame stile"),
+    bitem(32.5, 1.5, "Face-frame stile"),
+    bitem(32.5, 1.5, "Face-frame stile"),
+    bitem(15.25, 1.5, "Face-frame mid rail"),
+    bitem(37.25, 1.5, "Face-frame mid rail"),
+  ];
+  const MAPLE_BOARDS = [
+    { width: 2.5, length: 84, qty: 1 },
+    { width: 3.5, length: 168, qty: 1 },
+  ];
+
+  it("fits the maple-v3 run frame on the 7' 1×3 + 14' 1×4 (golden)", () => {
+    const { boards, oversize, shortfall, usedLength } = packBoards(MAPLE_ITEMS, MAPLE_BOARDS, 0.125);
+    expect(oversize).toHaveLength(0);
+    expect(shortfall).toHaveLength(0);
+    expect(usedLength).toBeCloseTo(267.25, 5);
+    expect(boards).toHaveLength(2);
+
+    // Widest profile first: the 2 3/4" bottom rail claims the 1×4 …
+    const b14 = boards[0];
+    expect(b14.width).toBe(3.5);
+    expect(b14.segments).toHaveLength(2);
+    expect(b14.segments[0]).toMatchObject({ offset: 0, length: 16.75, ripWidth: 2.75 });
+    expect(b14.segments[0].strips).toHaveLength(1);
+    // … then the 1 1/2" stiles + mid rails rip 2-up from the rest of it,
+    // balanced across both strips so the crosscut stays short.
+    expect(b14.segments[1]).toMatchObject({ offset: 16.875, length: 91.75, ripWidth: 1.5 });
+    expect(b14.segments[1].strips).toHaveLength(2);
+    expect(b14.segments[1].strips[0].cuts.map((c) => c.offset)).toEqual([0, 37.375, 70]);
+    expect(b14.segments[1].strips[0].cuts.map((c) => c.length)).toEqual([37.25, 32.5, 15.25]);
+    expect(b14.segments[1].strips[1].cuts.map((c) => c.offset)).toEqual([0, 32.625, 65.25]);
+    expect(b14.segments[1].strips[1].cuts.map((c) => c.length)).toEqual([32.5, 32.5, 26.5]);
+    expect(b14.used).toBeCloseTo(108.625, 5); // ~59" of the 14-footer left over
+
+    // The 2" top rail rips from the narrower 1×3 — not burned out of the 1×4.
+    const b13 = boards[1];
+    expect(b13.width).toBe(2.5);
+    expect(b13.segments).toHaveLength(1);
+    expect(b13.segments[0]).toMatchObject({ offset: 0, length: 74, ripWidth: 2 });
+    expect(b13.segments[0].strips[0].cuts[0].part).toBe("Face-frame top rail");
+    expect(b13.used).toBeCloseTo(74, 5);
+  });
+
+  it("counts rips a board's width can actually yield (kerf-aware)", () => {
+    // 3 1/2" board rips two 1 1/2" strips (1.5 + 0.125 + 1.5 = 3.125), never three.
+    const { boards, shortfall } = packBoards(
+      [bitem(40, 1.5), bitem(40, 1.5), bitem(40, 1.5)],
+      [{ width: 3.5, length: 96, qty: 1 }],
+      0.125,
+    );
+    expect(boards).toHaveLength(1);
+    expect(shortfall).toHaveLength(0);
+    const seg = boards[0].segments[0];
+    expect(seg.strips).toHaveLength(2);
+    // first-fit: two 40s share strip 1 (40 + kerf + 40 ends at 80 1/8), the third opens strip 2
+    expect(seg.strips[0].cuts.map((c) => c.offset)).toEqual([0, 40.125]);
+    expect(seg.strips[1].cuts.map((c) => c.offset)).toEqual([0]);
+    expect(seg.length).toBeCloseTo(80.125, 5);
+  });
+
+  it("spreads a profile across parallel strips instead of burning board length", () => {
+    // Regression (found in adversarial review): stacking 60 + 40 end-to-end in
+    // ONE strip would consume a 100 1/8" segment and strand the 35" × 1" part.
+    // Balanced strips keep the segment at 60" so the 1" part still fits after.
+    const { boards, shortfall } = packBoards(
+      [bitem(60, 1.5), bitem(40, 1.5), bitem(35, 1)],
+      [{ width: 3.5, length: 100.25, qty: 1 }],
+      0.125,
+    );
+    expect(shortfall).toHaveLength(0);
+    expect(boards).toHaveLength(1);
+    expect(boards[0].segments).toHaveLength(2);
+    expect(boards[0].segments[0]).toMatchObject({ offset: 0, length: 60, ripWidth: 1.5 });
+    expect(boards[0].segments[0].strips.map((st) => st.cuts[0].length)).toEqual([60, 40]);
+    expect(boards[0].segments[1]).toMatchObject({ offset: 60.125, length: 35, ripWidth: 1 });
+  });
+
+  it("shortens a 3-strip segment to the tightest balanced crosscut (MULTIFIT)", () => {
+    // Regression (adversarial round 2): greedy strip choice packed
+    // 20+3+2+2 into one strip (a 27 3/8" segment), stranding the 9" × 1" part.
+    // The refined plan crosscuts at 21 1/4" — 20 | 18+3 | 17+2+2 — and the
+    // 9" part still fits the board after it.
+    const { boards, shortfall } = packBoards(
+      [bitem(20, 1.5), bitem(18, 1.5), bitem(17, 1.5), bitem(3, 1.5), bitem(2, 1.5), bitem(2, 1.5), bitem(9, 1)],
+      [{ width: 5, length: 30.5, qty: 1 }],
+      0.125,
+    );
+    expect(shortfall).toHaveLength(0);
+    expect(boards).toHaveLength(1);
+    expect(boards[0].segments).toHaveLength(2);
+    expect(boards[0].segments[0].length).toBeCloseTo(21.25, 5);
+    expect(boards[0].segments[0].strips).toHaveLength(3);
+    expect(boards[0].segments[1]).toMatchObject({ offset: 21.375, length: 9, ripWidth: 1 });
+    expect(boards[0].used).toBeCloseTo(30.375, 5); // of 30.5
+  });
+
+  it("reports shortfall when the boards run out — not silently", () => {
+    const { boards, shortfall } = packBoards(
+      [bitem(60, 1.5), bitem(60, 1.5), bitem(60, 1.5), bitem(60, 1.5)],
+      [{ width: 1.5, length: 96, qty: 1 }],
+      0.125,
+    );
+    expect(boards).toHaveLength(1);
+    expect(boards[0].segments[0].strips[0].cuts).toHaveLength(1); // 60 + kerf + 60 > 96
+    expect(shortfall).toHaveLength(3);
+  });
+
+  it("opens another board of the same size while qty lasts", () => {
+    const { boards, shortfall } = packBoards(
+      [bitem(60, 1.5), bitem(60, 1.5)],
+      [{ width: 1.5, length: 96, qty: 2 }],
+      0.125,
+    );
+    expect(boards).toHaveLength(2);
+    expect(shortfall).toHaveLength(0);
+  });
+
+  it("flags a part no board size can produce as oversize", () => {
+    const { oversize, shortfall, boards } = packBoards(
+      [bitem(20, 5), bitem(200, 1.5), bitem(30, 1.5)],
+      MAPLE_BOARDS,
+      0.125,
+    );
+    // 5" wide and 200" long fit no board; the 30" still lands.
+    expect(oversize.map((o) => o.length).sort((a, b) => a - b)).toEqual([20, 200]);
+    expect(shortfall).toHaveLength(0);
+    expect(boards).toHaveLength(1);
+  });
+
+  it("conserves length — every part is placed, oversize, or shortfall", () => {
+    const { boards, oversize, shortfall, usedLength } = packBoards(
+      [...MAPLE_ITEMS, bitem(300, 1.5), bitem(90, 3)],
+      MAPLE_BOARDS,
+      0.125,
+    );
+    const placed = boards
+      .flatMap((b) => b.segments)
+      .flatMap((s2) => s2.strips)
+      .flatMap((st) => st.cuts)
+      .reduce((a, c) => a + c.length, 0);
+    expect(placed).toBeCloseTo(usedLength, 5);
+    const total = [...MAPLE_ITEMS, bitem(300, 1.5), bitem(90, 3)].reduce((a, x) => a + x.length, 0);
+    const lost = oversize.reduce((a, x) => a + x.length, 0) + shortfall.reduce((a, x) => a + x.length, 0);
+    expect(placed + lost).toBeCloseTo(total, 5);
+  });
+
+  it("never exceeds a board's physical length or rip count", () => {
+    const jumble = [
+      bitem(74, 2), bitem(16.75, 2.75), bitem(50, 1.5), bitem(50, 1.5), bitem(50, 1.5),
+      bitem(50, 1.5), bitem(50, 1.5), bitem(24, 2), bitem(12, 1.5), bitem(12, 1.5),
+    ];
+    const kerf = 0.125;
+    const { boards } = packBoards(jumble, [{ width: 3.5, length: 96, qty: 4 }], kerf);
+    for (const b of boards) {
+      expect(b.used).toBeLessThanOrEqual(b.length + 1e-6);
+      let cursor = 0;
+      for (const seg of b.segments) {
+        expect(seg.offset).toBeGreaterThanOrEqual(cursor - 1e-6); // segments never overlap
+        cursor = seg.offset + seg.length;
+        const maxStrips = Math.floor((b.width + kerf + 1e-6) / (seg.ripWidth + kerf));
+        expect(seg.strips.length).toBeLessThanOrEqual(maxStrips);
+        for (const st of seg.strips) {
+          expect(st.used).toBeLessThanOrEqual(seg.length + 1e-6);
+          // cuts inside a strip are kerf-separated and inside the segment
+          let x = 0;
+          st.cuts.forEach((c, i2) => {
+            if (i2 > 0) expect(c.offset).toBeCloseTo(x + kerf, 6);
+            x = c.offset + c.length;
+          });
+          expect(x).toBeLessThanOrEqual(seg.length + 1e-6);
+        }
+      }
+      expect(cursor).toBeLessThanOrEqual(b.length + 1e-6);
+    }
   });
 });
 
@@ -177,5 +362,68 @@ describe("compute — hardwood lands in linearPacks, split by profile, off the s
     for (const pack of m.packs)
       for (const s2 of pack.sheets)
         expect(s2.placements.some((pl) => pl.part === "Face-frame top rail")).toBe(false);
+  });
+});
+
+describe("compute — hardwood boards on hand flip the stock to the rip-aware board plan", () => {
+  const cabs = [
+    makeCabinet("base", "B1", { width: 30, construction: "framed", overlay: "inset_rail" }),
+    makeCabinet("base", "B2", { width: 24, construction: "framed", overlay: "inset_rail" }),
+  ];
+  const withBoards = (boards: { width: number; length: number; qty: number }[]): Settings =>
+    ({
+      ...S,
+      stocks: { ...S.stocks, hardwood: { ...S.stocks.hardwood, boards } },
+    }) as Settings;
+
+  it("uses boardPacks instead of per-profile linearPacks when boards are set", () => {
+    const m = compute(cabs, withBoards([{ width: 5.5, length: 144, qty: 4 }]));
+    expect(m.linearPacks.filter((p) => p.stockId === "hardwood")).toHaveLength(0);
+    expect(m.boardPacks).toHaveLength(1);
+    const bp = m.boardPacks[0];
+    expect(bp.stockId).toBe("hardwood");
+    expect(bp.shortfall).toHaveLength(0);
+    expect(bp.oversize).toHaveLength(0);
+    // every hardwood part landed on a board
+    const placed = bp.boards.flatMap((b) => b.segments).flatMap((s2) => s2.strips).flatMap((st) => st.cuts);
+    expect(placed.length).toBeGreaterThan(0);
+    expect(placed.reduce((a, c) => a + c.length, 0)).toBeCloseTo(bp.usedLength, 5);
+  });
+
+  it("counts board oversize in summary.oversize and shortfall in summary.boardShort", () => {
+    // one tiny board: almost the whole frame can't be cut
+    const m = compute(cabs, withBoards([{ width: 1.5, length: 20, qty: 1 }]));
+    const bp = m.boardPacks[0];
+    expect(bp.shortfall.length + bp.oversize.length).toBeGreaterThan(0);
+    expect(m.summary.oversize).toBeGreaterThanOrEqual(bp.oversize.length);
+    expect(m.summary.boardShort).toBe(bp.shortfall.length);
+  });
+
+  it("an empty boards list keeps the legacy per-profile plan", () => {
+    const m = compute(cabs, withBoards([]));
+    expect(m.boardPacks).toHaveLength(0);
+    expect(m.linearPacks.filter((p) => p.stockId === "hardwood").length).toBeGreaterThan(0);
+  });
+});
+
+describe("compute — pocketPlan rides the Model when the setting is on", () => {
+  const cabs = [
+    makeCabinet("base", "B1", { width: 30, construction: "framed", overlay: "inset_rail", frontStyle: "door_drawer", drawerCount: 1 }),
+    makeCabinet("base", "B2", { width: 24, construction: "framed", overlay: "inset_rail", frontStyle: "desk", drawerCount: 1, toeKick: false }),
+  ];
+
+  it("is null by default and populated when pocketHoles is on", () => {
+    expect(compute(cabs, S as Settings).pocketPlan).toBeNull();
+    const m = compute(cabs, { ...S, pocketHoles: true } as Settings);
+    expect(m.pocketPlan).toBeTruthy();
+    expect(m.pocketPlan!.totals.length).toBeGreaterThan(0);
+    // one frame entry, keyed to the run's cut group id
+    expect(m.pocketPlan!.frames).toHaveLength(1);
+    const runGroup = m.cutGroups.find((g) => g.typeLabel === "Run")!;
+    expect(m.pocketPlan!.frames[0].id).toBe(runGroup.id);
+    // the frame's fine-thread screws are included in the merged totals
+    const fine = m.pocketPlan!.totals.find((t) => t.spec.thread === "fine");
+    expect(fine).toBeTruthy();
+    expect(fine!.count).toBe(m.pocketPlan!.frames[0].screws);
   });
 });

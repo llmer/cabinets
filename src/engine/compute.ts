@@ -9,11 +9,29 @@ import {
   hardwareCost,
 } from "./hardware";
 import { typeLabel } from "./labels";
-import { LinearItem, LinearPack, PackRect, StockPack, packLinear, packStock } from "./packing";
+import {
+  BoardItem,
+  BoardPack,
+  LinearItem,
+  LinearPack,
+  PackRect,
+  StockPack,
+  packBoards,
+  packLinear,
+  packStock,
+} from "./packing";
 import { FrameContext, bandingInchesPerPiece, genParts, mergeParts } from "./parts";
-import { Run, membersSharePartition, runsOf } from "./runs";
-import { genBaseParts, genRunFrameParts } from "./runParts";
-import { StepGroup, genRunSteps, genSteps } from "./steps";
+import {
+  PocketSpec,
+  ScrewTotal,
+  frameJointEnds,
+  frameJointsFor,
+  pocketScrewTotals,
+  pocketSpec,
+} from "./pocketHoles";
+import { Run, bayFrameContext, runsOf } from "./runs";
+import { RunFrameJoints, genBaseParts, genRunFrameParts } from "./runParts";
+import { StepGroup, genRunSteps, genSteps, runGroupLabel } from "./steps";
 import { fmtLen } from "./units";
 
 export interface CutPart {
@@ -60,6 +78,8 @@ export interface Summary {
   cost: string;
   costRaw: number;
   oversize: number;
+  /** Linear parts that fit the boards on hand but ran out of them. */
+  boardShort: number;
   framed: boolean;
   frameLF: number;
 }
@@ -70,13 +90,25 @@ export interface Legend {
   color: string;
 }
 
+/** The project's pocket-hole demand, present when settings.pocketHoles is on. */
+export interface PocketPlan {
+  /** Merged screw demand — sheet-part pockets + every frame's actual joints. */
+  totals: ScrewTotal[];
+  /** Per frame (id = its run/cabinet cut group): joint counts + screws. */
+  frames: Array<{ id: string; joints: RunFrameJoints; screws: number; spec: PocketSpec }>;
+}
+
 export interface Model {
   cabinetParts: CabinetParts[];
   cutGroups: CutGroup[];
   stepGroups: StepGroup[];
   packs: StockPack[];
-  /** Linear (1D) cut layout for each hardwood/linear stock. */
+  /** Linear (1D) cut layout for each hardwood/linear stock bought by profile. */
   linearPacks: LinearPack[];
+  /** Rip-aware cut layout for each linear stock with actual boards on hand. */
+  boardPacks: BoardPack[];
+  /** Pocket-hole drill/screw plan — null unless settings.pocketHoles. */
+  pocketPlan: PocketPlan | null;
   summary: Summary;
   cost: CostBreakdown;
   legend: Legend[];
@@ -113,9 +145,10 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
   let frameLFInches = 0;
   let counts: HardwareCounts = { ...ZERO_COUNTS };
   const areaByStock = new Map<string, number>();
-  // Linear parts (hardwood face frame) grouped by stock + cross-section width, so
-  // each board profile (3/4"×1 1/2", 3/4"×2", …) gets its own cut layout.
-  const linearGroups = new Map<string, { stockId: string; width: number; items: LinearItem[] }>();
+  // Linear parts (hardwood face frame) per stock, each carrying its profile
+  // width. Laid out later either on the boards actually on hand (rip plan) or
+  // per width on standard boards (buy-by-profile).
+  const linearByStock = new Map<string, BoardItem[]>();
 
   /**
    * Funnel one part into every accumulator (piece count, banding, hardwood feet,
@@ -127,15 +160,11 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     bandLFInches += p.qty * bandingInchesPerPiece(p);
     if (p.linear) {
       frameLFInches += p.qty * p.length;
-      const key = `${p.stockId}|${p.width}`;
-      let g = linearGroups.get(key);
-      if (!g) {
-        g = { stockId: p.stockId, width: p.width, items: [] };
-        linearGroups.set(key, g);
-      }
+      const arr = linearByStock.get(p.stockId) || [];
       for (let i = 0; i < p.qty; i++) {
-        g.items.push({ length: p.length, color, label, part: p.name });
+        arr.push({ length: p.length, width: p.width, color, label, part: p.name });
       }
+      linearByStock.set(p.stockId, arr);
     } else {
       areaByStock.set(
         p.stockId,
@@ -183,17 +212,7 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
       const ms = run.members;
       // A joint shares ONE partition (the left bay owns it, the right bay drops
       // its side) only where the two bays line up — see membersSharePartition.
-      ms.forEach((m, i) =>
-        frameCtx.set(m.cabinet.id, {
-          emitFaceFrame: false,
-          openingWidth: m.openingWidth,
-          sideDrop: Math.max(0, m.yB - m.frameBottom),
-          leftEnd: m.leftEnd,
-          rightEnd: m.rightEnd,
-          shareLeft: i > 0 && membersSharePartition(ms[i - 1], m, s),
-          shareRight: i < ms.length - 1 && membersSharePartition(m, ms[i + 1], s),
-        }),
-      );
+      ms.forEach((m, i) => frameCtx.set(m.cabinet.id, bayFrameContext(run, i, s)));
     }
   }
 
@@ -215,7 +234,12 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
       dims: `${fmtLen(c.width, u)} w × ${fmtLen(c.height, u)} h × ${fmtLen(c.depth, u)} d`,
       parts: cutParts,
     });
-    stepGroups.push(genSteps(cp, s, color, runOwned(c.id)));
+    // A run-owned bay gets its run group's label so its walkthrough can close
+    // with a pointer to where the base/frame/fronts continue.
+    const label = runOwned(c.id)
+      ? runGroupLabel(runOf.get(c.id)!.members.map((m) => m.cabinet.name))
+      : undefined;
+    stepGroups.push(genSteps(cp, s, color, label));
   });
 
   // Run-level build steps: after the per-cabinet BOX groups above, one "assemble
@@ -262,6 +286,7 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     (a, b) => s.stocks[b].thickness - s.stocks[a].thickness,
   );
   let storeCuts = 0;
+  let boardShort = 0;
   for (const stockId of stockIds) {
     const stock = s.stocks[stockId];
     const rects = rectsByStock.get(stockId)!;
@@ -293,29 +318,81 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     for (const sh of result.sheets) if (sh.strips) storeCuts += sh.strips.length - 1;
   }
 
-  // Lay each linear profile out on standard boards — the face-frame cut plan,
-  // one run of boards per cross-section so you know how much of each width to
-  // buy. Board length comes from the stock (default 8 ft); a part longer than a
-  // board is oversize, same as a sheet part that won't fit.
+  // Lay the linear stock out — the face-frame cut plan. A stock with actual
+  // boards on hand gets the rip-aware plan (crosscut → rip → crosscut, with
+  // shortfall when the boards run out). Otherwise each cross-section width is
+  // packed onto standard boards (stock.stockLength, default 8 ft) so you know
+  // how much of each profile to buy.
   const linearPacks: LinearPack[] = [];
-  const groups = [...linearGroups.values()].sort(
-    (a, b) => a.stockId.localeCompare(b.stockId) || a.width - b.width,
-  );
-  for (const g of groups) {
-    const stock = s.stocks[g.stockId];
-    const boardLength = stock.stockLength || 96;
-    const result = packLinear(g.items, boardLength, s.kerf);
-    linearPacks.push({
-      stockId: g.stockId,
-      label: stock.label,
-      thickness: stock.thickness,
-      width: g.width,
-      boardLength,
-      boards: result.boards,
-      oversize: result.oversize,
-      usedLength: result.usedLength,
-    });
-    oversize += result.oversize.length;
+  const boardPacks: BoardPack[] = [];
+  const stocksWithLinear = [...linearByStock.keys()].sort((a, b) => a.localeCompare(b));
+  for (const stockId of stocksWithLinear) {
+    const stock = s.stocks[stockId];
+    const items = linearByStock.get(stockId)!;
+    if (stock.boards && stock.boards.length > 0) {
+      const result = packBoards(items, stock.boards, s.kerf);
+      boardPacks.push({
+        stockId,
+        label: stock.label,
+        thickness: stock.thickness,
+        specs: stock.boards.map((b) => ({ ...b })),
+        boards: result.boards,
+        oversize: result.oversize,
+        shortfall: result.shortfall,
+        usedLength: result.usedLength,
+      });
+      oversize += result.oversize.length;
+      boardShort += result.shortfall.length;
+      continue;
+    }
+    const widths = [...new Set(items.map((it) => it.width))].sort((a, b) => a - b);
+    for (const width of widths) {
+      const group: LinearItem[] = items
+        .filter((it) => it.width === width)
+        .map(({ length, color, label, part }) => ({ length, color, label, part }));
+      const boardLength = stock.stockLength || 96;
+      const result = packLinear(group, boardLength, s.kerf);
+      linearPacks.push({
+        stockId,
+        label: stock.label,
+        thickness: stock.thickness,
+        width,
+        boardLength,
+        boards: result.boards,
+        oversize: result.oversize,
+        usedLength: result.usedLength,
+      });
+      oversize += result.oversize.length;
+    }
+  }
+
+  // Pocket-hole plan: sheet-part pockets by name + every frame's actual
+  // joints, with the screw demand merged into one shopping-ready total.
+  let pocketPlan: PocketPlan | null = null;
+  if (s.pocketHoles) {
+    const allParts = cutGroups.flatMap((g) => g.parts.map((p) => p.part));
+    const totals = pocketScrewTotals(allParts, s);
+    const ffSpec = pocketSpec(s.stocks[s.roleStock.faceFrame]);
+    const frames = ffSpec
+      ? frameJointsFor(cabinets, s).map((f) => ({
+          ...f,
+          screws: 2 * frameJointEnds(f.joints),
+          spec: ffSpec,
+        }))
+      : [];
+    const frameCount = frames.reduce((a, f) => a + f.screws, 0);
+    if (frameCount > 0 && ffSpec) {
+      const same = totals.find(
+        (t) =>
+          t.spec.setting === ffSpec.setting &&
+          t.spec.screwLength === ffSpec.screwLength &&
+          t.spec.thread === ffSpec.thread,
+      );
+      if (same) same.count += frameCount;
+      else totals.push({ spec: ffSpec, count: frameCount });
+      totals.sort((a, b) => b.count - a.count);
+    }
+    pocketPlan = { totals, frames };
   }
 
   const totalArea = [...areaByStock.values()].reduce((a, x) => a + x, 0);
@@ -351,11 +428,12 @@ export function compute(cabinets: Cabinet[], s: Settings): Model {
     cost: "$" + Math.round(cost.total),
     costRaw: cost.total,
     oversize,
+    boardShort,
     framed: frameLFInches > 0,
     frameLF: Math.ceil(frameLFInches / 12),
   };
 
-  return { cabinetParts, cutGroups, stepGroups, packs, linearPacks, summary, cost, legend };
+  return { cabinetParts, cutGroups, stepGroups, packs, linearPacks, boardPacks, pocketPlan, summary, cost, legend };
 }
 
 /** Hardware cost alone (handy for tests / summaries). */

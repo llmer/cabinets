@@ -22,6 +22,22 @@ describe("genSteps", () => {
     expect(drawerSteps).toHaveLength(1);
   });
 
+  it("quotes the deck line on a framed inset desk", () => {
+    const c = makeCabinet("base", "DK", {
+      construction: "framed",
+      overlay: "inset_rail",
+      frontStyle: "desk",
+      drawerCount: 1,
+      toeKick: false,
+      drawerHeights: [6.75],
+    });
+    const { steps } = genSteps(genParts(c, S), S, "#000");
+    const deck = steps.find((st) => st.t.includes("deck panel"));
+    // boxH 34.5 - top rail 2 - drawer 6.75 - rail 1.5 + ply 0.75 = 25
+    expect(deck?.t).toContain('its TOP face 9 1/2" down from the top edge of the sides');
+    expect(deck?.t).toContain('(25" off the floor)');
+  });
+
   it("emits no drawer-box step for a plain door cabinet", () => {
     const c = makeCabinet("wall", "W1", { frontStyle: "doors", doorCount: 2, shelves: 2 });
     const { steps } = genSteps(genParts(c, S), S, "#000");
@@ -110,8 +126,8 @@ describe("genSteps", () => {
 
   it("a run-owned bay builds ONLY its box — no per-box frame, base, or fronts", () => {
     const c = makeCabinet("base", "FF", { construction: "framed", frontStyle: "door_drawer", doorCount: 2, drawerCount: 1 });
-    // runOwned=true = the run level fits the shared frame + fronts (genRunSteps)
-    const runBox = genSteps(genParts(c, S, { emitFaceFrame: false }), S, "#000", true).steps.map((st) => st.stage);
+    // a run label = the run level fits the shared frame + fronts (genRunSteps)
+    const runBox = genSteps(genParts(c, S, { emitFaceFrame: false }), S, "#000", "A–C").steps.map((st) => st.stage);
     expect(runBox).not.toContain("faceFrame");
     expect(runBox).not.toContain("base");
     expect(runBox).not.toContain("doors");
@@ -126,6 +142,39 @@ describe("genSteps", () => {
     expect(solo).toContain("faceFrame");
     expect(solo).toContain("doors");
     expect(solo).toContain("pulls");
+  });
+
+  it("a run-owned bay closes with a pointer to its run group", () => {
+    const c = makeCabinet("base", "B1", { construction: "framed", frontStyle: "door_drawer", doorCount: 1, drawerCount: 1 });
+    const { steps } = genSteps(genParts(c, S, { emitFaceFrame: false }), S, "#000", "B1–B3");
+    const last = steps[steps.length - 1];
+    expect(last.t).toContain('continue in "Face frame + base · B1–B3"');
+    // same stage as the previous step, so stage contiguity holds
+    expect(last.stage).toBe(steps[steps.length - 2].stage);
+    // a standalone bay gets no pointer
+    const solo = genSteps(genParts(c, S), S, "#000").steps;
+    expect(solo.some((st) => st.t.includes("run level"))).toBe(false);
+  });
+
+  it("spells out the End-panel drop when joining the bottom", () => {
+    const c = makeCabinet("base", "B1", {
+      construction: "framed",
+      overlay: "inset_rail",
+      frontStyle: "door_drawer",
+      drawerCount: 1,
+    });
+    // B1-style bay: exposed LEFT end, 1 1/4" drop to the face-frame line
+    const cp = genParts(c, S, { emitFaceFrame: false, sideDrop: 1.25, leftEnd: true });
+    expect(cp.geometry.endDropLeft).toBe(1.25);
+    expect(cp.geometry.endDropRight).toBe(0);
+    const { steps } = genSteps(cp, S, "#000", "B1–B3");
+    const bottom = steps.find((st) => st.t.includes("join the BOTTOM"));
+    expect(bottom?.t).toContain('runs 1 1/4" past the box at the foot');
+    expect(bottom?.t).toContain("run's LEFT (exposed) end");
+    expect(bottom?.t).toContain("Keep the TOPS flush");
+    // no drop -> no note
+    const plain = genSteps(genParts(c, S), S, "#000").steps.find((st) => st.t.includes("join the BOTTOM"));
+    expect(plain?.t).not.toContain("End panel");
   });
 
   it("genRunSteps fits ONE continuous face frame onto the whole assembled run", () => {
@@ -178,5 +227,38 @@ describe("genSteps", () => {
     expect(boxSteps.filter((st) => st.kind === "drawerBoxes")).toHaveLength(1);
     expect(boxSteps.some((st) => /slides/i.test(st.t))).toBe(true);
     expect(boxSteps.some((st) => /square/i.test(st.t))).toBe(true);
+  });
+});
+
+describe("genSteps — slide pack-out narration", () => {
+  const framed = makeCabinet("base", "FF", {
+    width: 18,
+    construction: "framed",
+    frontStyle: "drawers",
+    drawerCount: 3,
+  });
+
+  it("quotes the symmetric pack-out and strip size on a solo framed bay", () => {
+    const { steps } = genSteps(genParts(framed, S), S, "#000");
+    const slide = steps.find((st) => st.t.startsWith("Mount the drawer slides"))!;
+    expect(slide.t).toContain('pack each wall out to the slide line with the 22" × 4" blocking strips');
+    expect(slide.t).toContain('3/4" proud on each side');
+    expect(slide.t).toContain('shim until the slide faces sit exactly 1/2" off the box');
+  });
+
+  it("quotes the asymmetric per-side pack-out for a run-end bay", () => {
+    const cp = genParts(framed, S, { emitFaceFrame: false, leftEnd: false, rightEnd: true });
+    const { steps } = genSteps(cp, S, "#000");
+    const slide = steps.find((st) => st.t.startsWith("Mount the drawer slides"))!;
+    expect(slide.t).toContain('3/8" proud on the LEFT');
+    expect(slide.t).toContain('1 1/8" (2 strips) on the RIGHT');
+    expect(slide.t).toContain("centred under its front, not in the carcass");
+  });
+
+  it("keeps the frameless slide step free of pack-out talk", () => {
+    const fl = makeCabinet("base", "FL", { width: 18, frontStyle: "drawers", drawerCount: 3 });
+    const { steps } = genSteps(genParts(fl, S), S, "#000");
+    const slide = steps.find((st) => st.t.startsWith("Mount the drawer slides"))!;
+    expect(slide.t).not.toContain("blocking strips");
   });
 });

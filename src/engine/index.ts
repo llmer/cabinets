@@ -5,6 +5,7 @@ export * from "./runs";
 export * from "./runParts";
 export * from "./parts";
 export * from "./hardware";
+export * from "./pocketHoles";
 export * from "./packing";
 export * from "./cost";
 export * from "./steps";

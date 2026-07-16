@@ -138,6 +138,11 @@ only when cabinets or settings actually change.
 - Base cabinets use two 4" top stretchers; wall/tall use a full top.
 - Drawer boxes default to 1/2" ply sides with a 1/4" captured bottom, 1" narrower
   than the opening for side-mount slides. Toggle off in Settings.
+- **Framed drawer bays** also list "Slide blocking strip" parts — 4"-wide ply
+  pack-outs that bring each carcass wall flush with the slide line of the frame
+  opening (the box hangs centred under its front, so at a run joint the shared
+  half-stile side takes a thinner strip than an exposed end). The drawer build
+  step quotes the per-side thickness.
 - Hinges per door scale with height (2 / 3 / 4 / 5). One slide pair per drawer;
   one pull per door and drawer (configurable); four pins per adjustable shelf.
 

@@ -1,4 +1,4 @@
-import { Cabinet, Settings } from "@/domain/types";
+import { Cabinet, Settings, SlideBlockingSpec } from "@/domain/types";
 import { BuildStage } from "@/engine/steps";
 import {
   backThickness,
@@ -9,9 +9,11 @@ import {
   isFramed,
   isInset,
   isRailInset,
+  topBorderWidth,
 } from "@/engine/geometry";
-import { getDrawerHeights } from "@/engine/drawers";
-import { drawerBoxSpecs } from "@/engine/parts";
+import { deskDeckTop, getDrawerHeights } from "@/engine/drawers";
+import { drawerBoxSpecs, slideBlockingSpecs } from "@/engine/parts";
+import { pocketSpec, pocketsPerEnd } from "@/engine/pocketHoles";
 
 /**
  * Staged build geometry for ONE cabinet — the data behind the build-tab 3D
@@ -39,11 +41,33 @@ export type BuildPartKind =
   | "shelf" // adjustable shelf
   | "drawerBox"; // a drawer-box panel (interior)
 
+/**
+ * One pocket-hole marker on a build part: the centre of the pocket on the
+ * drilled face, the face's outward normal, and the pocket's long axis (the
+ * direction the screw travels — toward the nearest joining end).
+ */
+export interface PocketDot {
+  x: number;
+  y: number;
+  z: number;
+  /** Outward unit normal of the drilled face (exactly one axis is ±1). */
+  n: [number, number, number];
+  along: "x" | "y";
+}
+
 export interface BuildPart {
   stage: BuildStage;
   kind: BuildPartKind;
   /** Axis-aligned box: [x0, x1, y0, y1, z0, z1] in inches. */
   box: [number, number, number, number, number, number];
+  /**
+   * Pocket-hole markers on this part (settings.pocketHoles only). Mirrors the
+   * drill schedule (engine/pocketHoles): pockets in the NON-sanded face —
+   * underside of a base bottom, top of a wall bottom / desk deck / stretchers,
+   * outside faces of drawer fronts/backs. Face-frame members carry none here:
+   * their pockets face the carcass and are invisible once assembled.
+   */
+  pockets?: PocketDot[];
 }
 
 /** Front-panel thickness used for the 3D fronts (matches the main scene). */
@@ -61,7 +85,29 @@ export function buildBaseY(c: Cabinet, s: Settings): number {
   return c.type !== "wall" && c.toeKick !== false && !openBox ? s.toeKick : 0;
 }
 
-export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
+/**
+ * Which sides of the box are EXPOSED run ends (an exposed end drops to the
+ * face-frame floor line and the toe-kick base recesses under it). Omitted =
+ * both exposed — right for a standalone box or a run of one; a run bay passes
+ * its real ends (from `CabinetGeometry.endDropLeft/Right`) so the walkthrough
+ * shows one long End panel and one plain side, matching the cut list.
+ */
+export interface BuildEnds {
+  left: boolean;
+  right: boolean;
+}
+
+export function cabinetBuildParts(
+  c: Cabinet,
+  s: Settings,
+  ends?: BuildEnds,
+  /**
+   * Run-aware slide pack-out from `CabinetParts.geometry.slideBlocking`.
+   * Omitted = solo-cabinet blocking (full stiles both sides) — right for a
+   * standalone box, wrong at a run joint, so run bays must pass theirs in.
+   */
+  blocking?: SlideBlockingSpec[],
+): BuildPart[] {
   const out: BuildPart[] = [];
   const push = (
     stage: BuildStage,
@@ -72,10 +118,40 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
     y1: number,
     z0: number,
     z1: number,
+    pockets?: PocketDot[],
   ) => {
     if (Math.abs(x1 - x0) < 0.01 || Math.abs(y1 - y0) < 0.01 || Math.abs(z1 - z0) < 0.01)
       return;
-    out.push({ stage, kind, box: [x0, x1, y0, y1, z0, z1] });
+    out.push({ stage, kind, box: [x0, x1, y0, y1, z0, z1], ...(pockets?.length ? { pockets } : {}) });
+  };
+
+  // Pocket-hole markers (opt-in), gated per stock exactly like the build steps.
+  const phBox = s.pocketHoles && pocketSpec(s.stocks[s.roleStock.carcass]) != null;
+  /**
+   * A row of pockets near each X end of a panel/stretcher (screws exit into the
+   * side panels): on the face given by `face` (one axis pinned + its outward
+   * normal), spread evenly across [s0, s1] on the other axis.
+   */
+  const xEndDots = (
+    on: boolean,
+    x0: number,
+    x1: number,
+    perEnd: number,
+    face: { y?: [number, 1 | -1]; z?: [number, 1 | -1] },
+    s0: number,
+    s1: number,
+  ): PocketDot[] | undefined => {
+    if (!on) return undefined;
+    const inset = Math.min(1.75, (x1 - x0) / 4);
+    const dots: PocketDot[] = [];
+    for (const ex of [x0 + inset, x1 - inset]) {
+      for (let i = 0; i < perEnd; i++) {
+        const t = s0 + ((s1 - s0) * (i + 1)) / (perEnd + 1);
+        if (face.y) dots.push({ x: ex, y: face.y[0], z: t, n: [0, face.y[1], 0], along: "x" });
+        else dots.push({ x: ex, y: t, z: face.z![0], n: [0, 0, face.z![1]], along: "x" });
+      }
+    }
+    return dots;
   };
 
   const matT = carcassThickness(s);
@@ -98,30 +174,59 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   // opening / desk) keep their frame at the box bottom. Mirrors the main scene.
   const based = c.type !== "wall" && c.toeKick !== false && !openBox;
   const frameBottom = framed && based ? s.faceFrameFloorGap || 3.25 : yB;
+  const endL = ends?.left ?? true;
+  const endR = ends?.right ?? true;
 
   /* ---------- carcass ---------- */
   // side panels — cut, drilled and edge-banded at the `sides` stage. They run the
   // FULL depth (0..D) so the front sits at the front plane (flush with the front
   // stretcher + face frame) and the rear stays flush with the inset applied back.
-  // On a framed toe-kicked box the (exposed) ends drop to the frame line.
-  push("sides", "carcass", 0, matT, frameBottom, yT, 0, D);
-  push("sides", "carcass", x1 - matT, x1, frameBottom, yT, 0, D);
-  // bottom (closed boxes only)
-  if (!openBox) push("carcass", "carcass", matT, x1 - matT, yB, yB + matT, 0, D);
-  // top: base/desk get two stretchers (front + back), others a full top
+  // On a framed toe-kicked box an EXPOSED end drops to the frame line; a side
+  // shared with a neighbouring bay stays at box height.
+  push("sides", "carcass", 0, matT, endL ? frameBottom : yB, yT, 0, D);
+  push("sides", "carcass", x1 - matT, x1, endR ? frameBottom : yB, yT, 0, D);
+  // bottom (closed boxes only) — pockets in the NON-sanded face: the underside,
+  // EXCEPT a wall cabinet whose underside shows from below (they flip inside).
+  if (!openBox)
+    push(
+      "carcass",
+      "carcass",
+      matT,
+      x1 - matT,
+      yB,
+      yB + matT,
+      0,
+      D,
+      xEndDots(
+        phBox,
+        matT,
+        x1 - matT,
+        pocketsPerEnd(D),
+        c.type === "wall" ? { y: [yB + matT, 1] } : { y: [yB, -1] },
+        0,
+        D,
+      ),
+    );
+  // top: base/desk get two stretchers (front + back), others a full top —
+  // pockets face up (hidden under the counter / above the cabinet).
   if (c.type === "base") {
-    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, 4);
-    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, D - 4, D);
+    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, 4,
+      xEndDots(phBox, matT, x1 - matT, 2, { y: [yT, 1] }, 0, 4));
+    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, D - 4, D,
+      xEndDots(phBox, matT, x1 - matT, 2, { y: [yT, 1] }, D - 4, D));
   } else {
-    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, D);
+    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, D,
+      xEndDots(phBox, matT, x1 - matT, pocketsPerEnd(D), { y: [yT, 1] }, 0, D));
   }
   // Open box (appliance opening / desk knee): a pair of back stretchers on edge
   // (at the back, z≈0) stiffen the open surround — one under the top rear
   // stretcher, one across the back at floor level (no back/bottom keeps it
-  // square; the bottom one also nails to the wall).
+  // square; the bottom one also nails to the wall). Pockets toward the wall.
   if (openBox && c.type === "base") {
-    push("carcass", "carcass", matT, x1 - matT, yT - matT - 4, yT - matT, 0, matT);
-    push("carcass", "carcass", matT, x1 - matT, yB, yB + 4, 0, matT);
+    push("carcass", "carcass", matT, x1 - matT, yT - matT - 4, yT - matT, 0, matT,
+      xEndDots(phBox, matT, x1 - matT, 2, { z: [0, -1] }, yT - matT - 4, yT - matT));
+    push("carcass", "carcass", matT, x1 - matT, yB, yB + 4, 0, matT,
+      xEndDots(phBox, matT, x1 - matT, 2, { z: [0, -1] }, yB, yB + 4));
   }
   // applied back — squares the closed box, captured inset at the rear with its
   // top tucked just UNDER the top back stretcher (which owns the top-rear corner).
@@ -129,11 +234,11 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   // desk writing surface, capping the open box (not a nested cut-list part)
   if (desk) push("desktop", "carcass", 0, W, yT, yT + matT, 0, D);
   // Separate toe-kick base: recessed from the front, and (with a separate base)
-  // set in on the exposed end sides too — the box-on-a-base look. The isolated
-  // build shows a lone box, so both ends are treated as exposed.
+  // set in on the EXPOSED end sides only — the box-on-a-base look; at a shared
+  // joint the ladder runs through to the neighbouring bay.
   if (based && yB > 0) {
     const rec = s.separateBase ? s.toeKickSideRecess : 0;
-    push("base", "toeKick", rec, W - rec, 0, yB, 0, Math.max(matT, D - s.toeKickDepth));
+    push("base", "toeKick", endL ? rec : 0, W - (endR ? rec : 0), 0, yB, 0, Math.max(matT, D - s.toeKickDepth));
   }
 
   /* ---------- shelves (interior; shown in cutaway) ---------- */
@@ -145,7 +250,7 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
   }
 
   /* ---------- drawer boxes (interior; shown in cutaway) ---------- */
-  addDrawerBoxes(out, c, s, yT);
+  addDrawerBoxes(out, c, s, yT, blocking ?? slideBlockingSpecs(c, s));
 
   /* ---------- fronts + face frame ---------- */
   const fz0 = D - FRONT_T;
@@ -213,7 +318,12 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
     const ol = 0 + ff + GAP;
     const or = x1 - ff - GAP;
     const drawRail = (yA: number, yB2: number) => {
-      if (hasRails) push(railStage, railKind, rl, rr, yA, yB2, iz0, iz1);
+      // A frameless railed-inset divider rail is pocket-screwed into the sides
+      // (2 per end, on its back face — hidden behind it, seen only in cutaway).
+      // Framed mid rails carry no dots: their pockets face the carcass.
+      if (hasRails)
+        push(railStage, railKind, rl, rr, yA, yB2, iz0, iz1,
+          framed ? undefined : xEndDots(phBox, rl, rr, 2, { z: [iz0, -1] }, yA, yB2));
     };
     if (c.frontStyle === "doors") {
       const nd = c.doorCount;
@@ -237,9 +347,12 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
       });
       // Framed desk: a rail under the drawer (in the proud face-frame plane, like
       // the top rail) + a deck panel closing the drawer cavity off from the knee.
+      // Deck pockets face UP — it installs sanded face DOWN over the open knee.
       if (desk && framed) {
         push("faceFrame", "frame", rl, rr, y - railGap, y, fz0, fz1);
-        push("carcass", "carcass", matT, x1 - matT, y - railGap, y - railGap + matT, 0, D);
+        const dkTop = yB + deskDeckTop(c, s); // == y - railGap + matT; the step text quotes this line
+        push("carcass", "carcass", matT, x1 - matT, dkTop - matT, dkTop, 0, D,
+          xEndDots(phBox, matT, x1 - matT, pocketsPerEnd(D), { y: [dkTop, 1] }, 0, D));
       }
       if (c.frontStyle === "door_drawer") {
         drawRail(y - railGap, y);
@@ -278,6 +391,17 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
       hbar(ol, or, top - dh, top, false);
       top -= dh;
     });
+    // Framed FULL-OVERLAY desk: the proud front hides the frame, but the
+    // under-drawer rail and the deck are still real parts — same as the inset
+    // desk (the cut list emits them for ANY framed desk).
+    if (desk && framed) {
+      const zf1 = fz0;
+      const zf0 = zf1 - FRONT_T;
+      const rg = s.frameWidth || 1.5;
+      push("faceFrame", "frame", ff, x1 - ff, top - rg, top, zf0, zf1);
+      push("carcass", "carcass", matT, x1 - matT, top - rg, top - rg + matT, 0, D,
+        xEndDots(phBox, matT, x1 - matT, pocketsPerEnd(D), { y: [top - rg + matT, 1] }, 0, D));
+    }
   } else if (c.frontStyle === "door_drawer") {
     const dh = getDrawerHeights(c, s)[0];
     push("drawerFronts", "front", ol, or, ot - dh + GAP / 2, ot, fz0, fz1);
@@ -296,7 +420,13 @@ export function cabinetBuildParts(c: Cabinet, s: Settings): BuildPart[] {
 }
 
 /** Open drawer boxes drawn inside the carcass (revealed in the cutaway view). */
-function addDrawerBoxes(out: BuildPart[], c: Cabinet, s: Settings, yT: number): void {
+function addDrawerBoxes(
+  out: BuildPart[],
+  c: Cabinet,
+  s: Settings,
+  yT: number,
+  blocking: SlideBlockingSpec[],
+): void {
   const hasDrawers =
     c.frontStyle === "drawers" || c.frontStyle === "desk" || c.frontStyle === "door_drawer";
   if (!hasDrawers) return;
@@ -305,31 +435,64 @@ function addDrawerBoxes(out: BuildPart[], c: Cabinet, s: Settings, yT: number): 
   const dt = s.stocks[s.roleStock.drawerBox].thickness;
   const bt = s.stocks[s.roleStock.drawerBottom].thickness;
   const inset = isInset(c);
-  const ff = inset ? effectiveFrameWidth(c, s) : 0.125;
+  // The first slot hangs under the TOP border — the (wider) face-frame top
+  // rail when framed, the carcass edge when frameless — matching the cut list.
+  const slotTop = inset ? topBorderWidth(c, s) : 0.125;
   const railGap = inset ? insetStackGap(c, s) : 0.125;
   const heights = getDrawerHeights(c, s);
   const W = c.width;
   const fz0 = c.depth - FRONT_T;
-  const push = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => {
+  const push = (
+    x0: number,
+    x1: number,
+    y0: number,
+    y1: number,
+    z0: number,
+    z1: number,
+    pockets?: PocketDot[],
+  ) => {
     if (Math.abs(x1 - x0) < 0.01 || Math.abs(y1 - y0) < 0.01 || Math.abs(z1 - z0) < 0.01)
       return;
-    out.push({ stage: "drawers", kind: "drawerBox", box: [x0, x1, y0, y1, z0, z1] });
+    out.push({ stage: "drawers", kind: "drawerBox", box: [x0, x1, y0, y1, z0, z1], ...(pockets?.length ? { pockets } : {}) });
   };
-  let top = yT - ff;
+  // Front/back pockets sit on the NON-sanded OUTSIDE faces (the applied front /
+  // the cabinet back hide them), 2 per end, screws exiting into the sides.
+  const ph = s.pocketHoles && pocketSpec(s.stocks[s.roleStock.drawerBox]) != null;
+  const faceDots = (x0: number, x1: number, y0: number, y1: number, fz: number, nz: 1 | -1): PocketDot[] | undefined => {
+    if (!ph) return undefined;
+    const inset = Math.min(1.75, (x1 - x0) / 4);
+    const dots: PocketDot[] = [];
+    for (const ex of [x0 + inset, x1 - inset]) {
+      for (let i = 0; i < 2; i++) {
+        dots.push({ x: ex, y: y0 + ((y1 - y0) * (i + 1)) / 3, z: fz, n: [0, 0, nz], along: "x" });
+      }
+    }
+    return dots;
+  };
+  // The box hangs centred under its FRONT (between the slide planes), which in
+  // a run bay is shifted off the carcass centre by the asymmetric stiles.
+  const packL = blocking.find((b) => b.side === "left");
+  let top = yT - slotTop;
   heights.forEach((dh, i) => {
     const sp = specs[i];
     if (!sp) return;
     const slotBottom = top - dh;
-    const bx0 = W / 2 - sp.boxWidth / 2;
+    const bx0 = packL ? packL.plane + 0.5 : W / 2 - sp.boxWidth / 2;
     const bx1 = bx0 + sp.boxWidth;
     const bz1 = fz0 - 0.25;
     const bz0 = Math.max(0.75, bz1 - sp.boxDepth);
     const by0 = slotBottom + 0.25;
     const by1 = Math.max(by0 + 1, Math.min(top - 0.25, by0 + sp.boxHeight));
+    // Slide pack-out strips first — wall out to the slide line at each drawer.
+    for (const pk of blocking) {
+      const px0 = pk.side === "left" ? pk.plane - pk.thickness : pk.plane;
+      const py0 = Math.max(carcassThickness(s), by0 - 0.875);
+      push(px0, px0 + pk.thickness, py0, py0 + pk.width, bz0, bz1);
+    }
     push(bx0, bx0 + dt, by0, by1, bz0, bz1); // left side
     push(bx1 - dt, bx1, by0, by1, bz0, bz1); // right side
-    push(bx0, bx1, by0, by1, bz1 - dt, bz1); // sub-front
-    push(bx0, bx1, by0, by1, bz0, bz0 + dt); // back
+    push(bx0, bx1, by0, by1, bz1 - dt, bz1, faceDots(bx0, bx1, by0, by1, bz1, 1)); // sub-front
+    push(bx0, bx1, by0, by1, bz0, bz0 + dt, faceDots(bx0, bx1, by0, by1, bz0, -1)); // back
     push(bx0, bx1, by0, by0 + bt, bz0, bz1); // bottom
     top = slotBottom - (i < heights.length - 1 ? railGap : 0);
   });

@@ -8,6 +8,7 @@ import {
   interiorWidth,
 } from "./geometry";
 import {
+  deskDeckTop,
   drawerStackBudget,
   evenHeights,
   getDrawerHeights,
@@ -68,6 +69,24 @@ describe("drawer-height model", () => {
     expect(drawerStackBudget(c, S)).toBe(12.5);
     // but defaults to a shallow ~5" pencil drawer
     expect(evenHeights(c, 1, S)).toEqual([5]);
+  });
+
+  it("puts a framed desk's drawer deck flush under the mid rail", () => {
+    const c = makeCabinet("base", "B", {
+      height: 34.5,
+      frontStyle: "desk",
+      drawerCount: 1,
+      toeKick: false,
+      construction: "framed",
+      overlay: "inset_rail",
+      drawerHeights: [6.75],
+    });
+    // boxH 34.5 - top rail 2 - drawer 6.75 - rail 1.5 + ply 0.75 = 25:
+    // the deck's underside (24.25) is flush with the rail's underside.
+    expect(deskDeckTop(c, S)).toBe(25);
+    // two stacked drawers add a mid rail between them
+    const c2 = { ...c, drawerCount: 2, drawerHeights: [5, 5] };
+    expect(deskDeckTop(c2, S)).toBe(20.25); // 34.5 - 2 - 10 - 1.5 - 1.5 + 0.75
   });
 
   it("reserves >=6\" door opening on drawer-over-door", () => {

@@ -58,6 +58,20 @@ describe("audit", () => {
     expect(r.ok).toBe(false);
   });
 
+  it("warns when the hardwood boards on hand run out, errors when a part fits no board", () => {
+    const framed = makeCabinet("base", "B1", { width: 30, construction: "framed", overlay: "inset_rail" });
+    const withBoards = (boards: { width: number; length: number; qty: number }[]): Settings =>
+      ({ ...S, stocks: { ...S.stocks, hardwood: { ...S.stocks.hardwood, boards } } }) as Settings;
+    // plenty of board → clean
+    expect(codes([framed], withBoards([{ width: 5.5, length: 144, qty: 3 }]))).not.toContain("board_shortfall");
+    // one stubby board → the frame can't be cut from what's on hand
+    const short = auditProject([framed], withBoards([{ width: 3.5, length: 24, qty: 1 }]));
+    expect(short.findings.some((f) => f.code === "board_oversize" && f.level === "error")).toBe(true);
+    // wide-enough but too little length → shortfall warning
+    const thin = auditProject([framed], withBoards([{ width: 3.5, length: 40, qty: 1 }]));
+    expect(thin.findings.some((f) => f.code === "board_shortfall" && f.level === "warn")).toBe(true);
+  });
+
   it("warns on a mixed toe-kick run only under a continuous frame", () => {
     const a = makeCabinet("base", "B1", { width: 24, toeKick: true, doorCount: 2, construction: "framed" });
     const b = makeCabinet("base", "B2", { width: 24, toeKick: false, doorCount: 2, construction: "framed" });

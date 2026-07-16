@@ -1,4 +1,4 @@
-import { Cabinet, CabinetParts, Part, Role, Settings } from "@/domain/types";
+import { Cabinet, CabinetParts, Part, Role, Settings, SlideBlockingSpec } from "@/domain/types";
 import {
   backThickness,
   boxHeight,
@@ -245,17 +245,29 @@ export function genParts(c: Cabinet, s: Settings, frame: FrameContext = SOLO_FRA
   }
 
   /* ---------- drawer boxes (addition) ---------- */
+  const blocking = slideBlockingSpecs(c, s, frame);
   if (s.includeDrawerBoxes && hasDrawers(c)) {
-    for (const sp of drawerBoxSpecs(c, s)) {
+    const boxSpecs = drawerBoxSpecs(c, s);
+    for (const sp of boxSpecs) {
       add("Drawer box side", 2, sp.boxDepth, sp.boxHeight, "drawerBox", "none");
       add("Drawer box front/back", 2, r3(sp.boxWidth - 2 * sp.sideThickness), sp.boxHeight, "drawerBox", "none");
       add("Drawer bottom", 1, sp.bottomWidth, sp.bottomLength, "drawerBottom", "none");
     }
+    // Slide pack-out — a framed bay's box clears the FRAME opening, so each
+    // wall gets ply strips (per drawer, per side) out to the slide line.
+    const strips = blocking.reduce((n, b) => n + b.layers, 0) * boxSpecs.length;
+    if (strips > 0)
+      add("Slide blocking strip", strips, blocking[0].length, blocking[0].width, "carcass", "none");
   }
 
   return {
     cabinet: c,
-    geometry: cabinetGeometry(c, s),
+    geometry: {
+      ...cabinetGeometry(c, s),
+      endDropLeft: frame.leftEnd ? drop : 0,
+      endDropRight: frame.rightEnd ? drop : 0,
+      slideBlocking: blocking,
+    },
     parts: mergeParts(parts),
   };
 }
@@ -283,6 +295,57 @@ export interface DrawerBoxSpec {
   bottomWidth: number;
   bottomLength: number;
   bottomThickness: number;
+}
+
+/** Width of a slide-blocking strip — enough to catch any slide's screw pattern. */
+const BLOCKING_STRIP_WIDTH = 4;
+
+/**
+ * Slide pack-out strips for a framed drawer bay, per side.
+ *
+ * The drawer box clears the face-frame OPENING (see `drawerBoxSpecs`), and it
+ * hangs centred under its front — so each slide's mounting face sits well
+ * inboard of the carcass wall, and the wall gets packed out to it with ply
+ * strips. The pack-out is asymmetric in a run: a shared half-stile joint puts
+ * the frame edge (and so the slide line) closer to the wall than an exposed
+ * end carrying a full stile. A shared partition (half a panel in this bay)
+ * moves the wall itself, and the strip thickens to match. Frameless boxes
+ * need none — their slides mount straight to the carcass at 1/2" per side.
+ */
+export function slideBlockingSpecs(
+  c: Cabinet,
+  s: Settings,
+  frame: FrameContext = SOLO_FRAME,
+): SlideBlockingSpec[] {
+  if (!isFramed(c) || !hasDrawers(c)) return [];
+  const t = carcassThickness(s);
+  const ff = s.frameWidth || 1.5;
+  // Stile width inside this bay: full on a solo cabinet or an exposed run end,
+  // half at a run joint — mirrors `runs.ts` (openingWidth / openingLeft).
+  const solo = frame.emitFaceFrame;
+  const stileL = solo || frame.leftEnd ? ff : ff / 2;
+  const stileR = solo || frame.rightEnd ? ff : ff / 2;
+  // Wall inner faces: a shared partition is centred on the joint, so only half
+  // its thickness lives in this bay — same rule as `interiorW` in genParts.
+  const wallL = frame.shareLeft ? t / 2 : t;
+  const wallR = frame.shareRight ? t / 2 : t;
+  const boxW = r3(c.width - 2 * effectiveFrameWidth(c, s) - 1); // == drawerBoxSpecs
+  const centre = stileL + (c.width - stileL - stileR) / 2;
+  const boxDepth = Math.max(6, Math.floor(carcassDepth(c, s) - 1));
+  const mk = (side: "left" | "right", plane: number, thickness: number): SlideBlockingSpec => ({
+    side,
+    plane: r3(plane),
+    thickness: r3(thickness),
+    layers: Math.max(1, Math.round(thickness / t)),
+    length: boxDepth,
+    width: BLOCKING_STRIP_WIDTH,
+  });
+  const planeL = centre - boxW / 2 - 0.5;
+  const planeR = centre + boxW / 2 + 0.5;
+  return [
+    mk("left", planeL, planeL - wallL),
+    mk("right", planeR, c.width - wallR - planeR),
+  ].filter((sp) => sp.thickness > 0.05);
 }
 
 /**

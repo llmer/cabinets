@@ -32,6 +32,7 @@ import {
   drawerBoxTable,
   headline,
   materialsText,
+  pocketsText,
   sheetsText,
   stepsText,
   summaryText,
@@ -498,7 +499,8 @@ server.registerTool(
     title: "Update project settings",
     description:
       "Patch project-wide settings: reveal, toe kick + recesses, face-frame widths, kerf, " +
-      "run frame/base toggles, drawer-box generation, guide heights, units, edge-band price, " +
+      "run frame/base toggles, drawer-box generation, `pocketHoles` (build-guide pocket-hole " +
+      "jig settings + screw specs), guide heights, units, edge-band price, " +
       "`storeBreakdown`/`storeTrim` (plan panel-saw rips at the store — explain \"store_breakdown\"), " +
       "and `construction` (the default frameless/framed applied to NEW cabinets).",
     inputSchema: {
@@ -518,6 +520,7 @@ server.registerTool(
       separateBase: z.boolean().optional(),
       sharedPartitions: z.boolean().optional(),
       includeDrawerBoxes: z.boolean().optional(),
+      pocketHoles: z.boolean().optional(),
       upperBottom: z.number().min(0).max(120).optional(),
       counterH: z.number().min(0).max(60).optional(),
       edgeBandPerFoot: z.number().min(0).max(50).optional(),
@@ -563,7 +566,10 @@ server.registerTool(
   "update_stock",
   {
     title: "Edit a stock",
-    description: "Change a stock's label, thickness, sheet size or price.",
+    description:
+      "Change a stock's label, thickness, sheet size or price. For linear stock, set `boards` " +
+      "to the boards actually on hand (width × length × qty, inches) and the hardwood cut plan " +
+      "rips the part widths from them; an empty array reverts to buy-by-profile boards of stockLength.",
     inputSchema: {
       id: z.string().min(1),
       label: z.string().max(60).optional(),
@@ -572,6 +578,17 @@ server.registerTool(
       sheetH: z.number().min(0).max(240).optional(),
       costPerSheet: z.number().min(0).max(100000).optional(),
       costPerFoot: z.number().min(0).max(100000).optional(),
+      stockLength: z.number().positive().max(600).optional(),
+      boards: z
+        .array(
+          z.object({
+            width: z.number().positive().max(48),
+            length: z.number().positive().max(600),
+            qty: z.number().int().min(1).max(999),
+          }),
+        )
+        .max(12)
+        .optional(),
     },
     annotations: RW,
   },
@@ -662,7 +679,8 @@ server.registerTool(
     title: "Assembly steps",
     description:
       "Ordered, real-assembly-order build steps for every cabinet (or one by id/name), each " +
-      "tagged with its construction stage (sides → carcass → … → pulls).",
+      "tagged with its construction stage (sides → carcass → … → pulls). A bay in a " +
+      "continuous run also returns its run-level group (join + shared base + ONE face frame).",
     inputSchema: { cabinet: z.string().optional() },
     annotations: RO,
   },
@@ -677,6 +695,20 @@ server.registerTool(
     }
     return text(stepsText(model));
   },
+);
+
+server.registerTool(
+  "get_pocket_holes",
+  {
+    title: "Pocket-hole schedule",
+    description:
+      "The pocket-hole drill schedule (requires settings.pocketHoles): which pieces get pockets, " +
+      "how many, in which (hidden) face, the jig setting per stock, and the screws to buy — " +
+      "including the face frame's actual joints.",
+    inputSchema: {},
+    annotations: RO,
+  },
+  async () => text(pocketsText(session.model(), session.settings)),
 );
 
 server.registerTool(

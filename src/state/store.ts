@@ -21,7 +21,7 @@ import {
   saveProject,
 } from "./persistence";
 
-export type ViewId = "layout" | "cutlist" | "sheets" | "build" | "3d" | "settings";
+export type ViewId = "layout" | "cutlist" | "sheets" | "pockets" | "build" | "3d" | "settings";
 
 /** Build view shows either the full step list or a focused, one-step walkthrough. */
 export type BuildMode = "overview" | "guided";
@@ -118,7 +118,7 @@ function bandOf(c: Cabinet): "base" | "wall" {
   return c.type === "wall" ? "wall" : "base";
 }
 
-const ALL_VIEWS: ViewId[] = ["layout", "cutlist", "sheets", "build", "3d", "settings"];
+const ALL_VIEWS: ViewId[] = ["layout", "cutlist", "sheets", "pockets", "build", "3d", "settings"];
 
 /** Initial view comes from the URL hash (#cutlist …) so tabs are deep-linkable. */
 function initialView(): ViewId {

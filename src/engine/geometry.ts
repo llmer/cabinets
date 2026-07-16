@@ -90,5 +90,8 @@ export function cabinetGeometry(c: Cabinet, s: Settings): CabinetGeometry {
     framed: isFramed(c),
     inset: isInset(c),
     openBox: isOpenBox(c),
+    endDropLeft: 0, // stamped by genParts when a run frame context supplies a drop
+    endDropRight: 0,
+    slideBlocking: [], // stamped by genParts (needs the run frame context)
   };
 }

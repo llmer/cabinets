@@ -1,5 +1,5 @@
 import { CSSProperties } from "react";
-import { Role, Stock } from "@/domain/types";
+import { LinearBoardSpec, Role, Stock } from "@/domain/types";
 import { color, font } from "@/theme";
 import { parseLen, toDisplayNumber, unitLabel } from "@/engine/units";
 import { DEFAULT_SETTINGS } from "@/domain/defaults";
@@ -119,6 +119,10 @@ export function SettingsView() {
             Generate drawer-box parts
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.pocketHoles} onChange={(e) => updateSettings({ pocketHoles: e.target.checked })} />
+            Pocket-hole joinery in the build guide (jig settings + screws)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
             <input type="checkbox" checked={settings.showGuideLines} onChange={(e) => updateSettings({ showGuideLines: e.target.checked })} />
             Show elevation guide lines
           </label>
@@ -202,6 +206,35 @@ export function SettingsView() {
                 }, true)
               )}
             </div>
+            {stock.kind === "linear" && (
+              <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: `2px solid ${color.border}` }}>
+                <div style={{ fontFamily: font.mono, fontSize: 9, color: color.faint, marginBottom: 5, textTransform: "uppercase", letterSpacing: ".08em" }}>
+                  Boards on hand — part widths are ripped from these (none = buy a board per width)
+                </div>
+                {(stock.boards || []).map((b, i) => (
+                  <div key={`${stock.id}:${i}/${stock.boards!.length}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 6, maxWidth: 420 }}>
+                    {numCell(toDisplayNumber(b.width, u), `Wid (${unitLabel(u)})`, (raw) => {
+                      const v = parseLen(raw, u);
+                      if (!isNaN(v) && v > 0) updateStock(stock.id, { boards: withBoard(stock.boards!, i, { width: v }) });
+                    })}
+                    {numCell(toDisplayNumber(b.length, u), `Len (${unitLabel(u)})`, (raw) => {
+                      const v = parseLen(raw, u);
+                      if (!isNaN(v) && v > 0) updateStock(stock.id, { boards: withBoard(stock.boards!, i, { length: v }) });
+                    })}
+                    {numCell(b.qty, "Qty", (raw) => {
+                      const v = Math.round(parseFloat(raw));
+                      if (!isNaN(v) && v > 0) updateStock(stock.id, { boards: withBoard(stock.boards!, i, { qty: v }) });
+                    })}
+                    <Button variant="mono" onClick={() => updateStock(stock.id, { boards: stock.boards!.filter((_, j) => j !== i) })}>
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+                <Button variant="mono" onClick={() => updateStock(stock.id, { boards: [...(stock.boards || []), { width: 3.5, length: 96, qty: 1 }] })}>
+                  + board
+                </Button>
+              </div>
+            )}
           </div>
         ))}
         <Divider style={{ margin: "8px 0 16px" }} />
@@ -249,6 +282,10 @@ export function SettingsView() {
       </Button>
     </div>
   );
+}
+
+function withBoard(boards: LinearBoardSpec[], i: number, patch: Partial<LinearBoardSpec>): LinearBoardSpec[] {
+  return boards.map((b, j) => (j === i ? { ...b, ...patch } : b));
 }
 
 function numCell(value: number, label: string, onCommit: (raw: string) => void, money = false) {
