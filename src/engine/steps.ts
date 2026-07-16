@@ -2,7 +2,7 @@ import { CabinetParts, Settings, SlideBlockingSpec } from "@/domain/types";
 import { bandingInchesPerPiece } from "./parts";
 import { Run } from "./runs";
 import { runFrameJoints } from "./runParts";
-import { backThickness, effectiveFrameWidth, isRailInset } from "./geometry";
+import { backThickness, isRailInset } from "./geometry";
 import { hingesForDoorHeight } from "./hardware";
 import { typeLabel } from "./labels";
 import { pocketSpec, pocketsPerEnd, screwLabel } from "./pocketHoles";
@@ -384,22 +384,31 @@ export function genSteps(
 
   // 1. Drawer slides + boxes (the box only — the face is a later step).
   if (drw > 0) {
-    const bw = fmtLen(c.width - 2 * effectiveFrameWidth(c, s) - 1, u);
-    const bd = fmtLen(Math.floor(g.carcassDepth - 1), u);
+    // Quote the box off the GEOMETRY — never re-derive it here, or a bay at a
+    // shared run joint gets narrated at its (narrower) solo size.
+    const box0 = g.drawerBoxes[0];
+    const bw = fmtLen(box0?.boxWidth ?? 0, u);
+    const bd = fmtLen(box0?.boxDepth ?? 0, u);
     // Framed: the box clears the FACE-FRAME opening, so the walls get packed
     // out to the slide line first. Quote the per-side pack-out from the
     // geometry — it is asymmetric in a run (half stile at a joint, full stile
-    // at an exposed end) — and say where the strips sit.
+    // at an exposed end), and a joint flush with the wall needs none at all.
     const bl = g.slideBlocking;
     const blThick = (sp: SlideBlockingSpec) =>
-      `${fmtLen(sp.thickness, u)}${sp.layers > 1 ? ` (${sp.layers} strips)` : ""}`;
+      sp.layers === 0
+        ? `${fmtLen(sp.thickness, u)} of shim (thinner than one ply)`
+        : `${fmtLen(sp.thickness, u)}${sp.layers > 1 ? ` (${sp.layers} strips)` : ""}`;
+    const SIDE = { left: "LEFT", right: "RIGHT" } as const;
     const slideNote = bl.length
       ? (() => {
           const sides =
-            bl.length === 2 && bl[0].thickness !== bl[1].thickness
-              ? `${blThick(bl[0])} proud on the LEFT and ${blThick(bl[1])} on the RIGHT — the box hangs centred under its front, not in the carcass`
-              : `${blThick(bl[0])} proud on each side`;
-          return ` — the box is sized to the face-frame opening, so first pack each wall out to the slide line with the ${fmtLen(bl[0].length, u)} × ${fmtLen(bl[0].width, u)} blocking strips from the cut list (one per slide per side), ${sides}; set each strip's bottom edge ~7/8" below its drawer opening (on a desk that is resting on the deck) and shim until the slide faces sit exactly ${fmtLen(0.5, u)} off the box on both sides, or skip the strips and use face-frame rear-mount sockets`;
+            bl.length === 2
+              ? bl[0].thickness === bl[1].thickness
+                ? `${blThick(bl[0])} proud on each side`
+                : `${blThick(bl[0])} proud on the LEFT and ${blThick(bl[1])} on the RIGHT — the box hangs centred under its front, not in the carcass`
+              : // one side only: the other stile is already flush with its wall
+                `${blThick(bl[0])} proud on the ${SIDE[bl[0].side]} ONLY — the other side's stile already sits flush with the carcass wall, so its slide mounts straight to the panel`;
+          return ` — the box is sized to the face-frame opening, so first pack the wall out to the slide line with the ${fmtLen(bl[0].length, u)} × ${fmtLen(bl[0].width, u)} blocking strips from the cut list (one per slide), ${sides}; set each strip's bottom edge ~7/8" below its drawer opening (on a desk that is resting on the deck) and shim until the slide faces sit exactly ${fmtLen(0.5, u)} off the box on both sides, or skip the strips and use face-frame rear-mount sockets`;
         })()
       : "";
     // Frameless railed inset: the rails dividing the openings go in first.

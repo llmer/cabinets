@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { color, font } from "@/theme";
-import { Cabinet, Settings, SlideBlockingSpec } from "@/domain/types";
+import { Cabinet, DrawerBoxSpec, Settings, SlideBlockingSpec } from "@/domain/types";
 import { BuildStage } from "@/engine/steps";
 import { CabinetScene } from "@/three/CabinetScene";
 
@@ -11,6 +11,8 @@ export interface BuildStepSceneProps {
   ends?: { left: boolean; right: boolean };
   /** Run-aware slide pack-out from the cut-list geometry. Omitted = solo. */
   blocking?: SlideBlockingSpec[];
+  /** Run-aware drawer boxes from the cut-list geometry. Omitted = solo. */
+  boxes?: DrawerBoxSpec[];
   /** For a run-level step: render the whole assembled run instead of one box. */
   runCabinets?: Cabinet[];
   /** Run step only: is the face frame attached yet? Carcass view until it is. */
@@ -43,6 +45,7 @@ export function BuildStepScene({
   cabinet,
   ends,
   blocking,
+  boxes,
   runCabinets,
   runFrameOn,
   settings,
@@ -59,6 +62,7 @@ export function BuildStepScene({
   const revealedKey = revealedStages.join(",");
   const endsKey = ends ? `${ends.left},${ends.right}` : "";
   const blockingKey = blocking ? blocking.map((b) => `${b.plane}:${b.thickness}`).join(",") : "";
+  const boxesKey = boxes ? boxes.map((b) => `${b.boxWidth}x${b.boxHeight}`).join(",") : "";
   // A run step shows the joined carcasses until the frame is attached (cut →
   // connect happen on the bench), then the fitted frame + fronts; a box step
   // follows the interior/cutaway rule.
@@ -96,12 +100,12 @@ export function BuildStepScene({
       // once across all bays); fronts hidden until the frame is fitted.
       sceneRef.current?.setRunFocus(runCabinets, settings, !cutaway);
     } else if (cabinet) {
-      sceneRef.current?.setBuildFocus(cabinet, settings, stage, revealedStages, accent, !cutaway, ends, blocking);
+      sceneRef.current?.setBuildFocus(cabinet, settings, stage, revealedStages, accent, !cutaway, ends, blocking, boxes);
     }
-    // revealedStages/ends/blocking are keyed by revealedKey/endsKey/blockingKey
+    // revealedStages/ends/blocking/boxes are keyed by the *Key strings below
     // to avoid re-pushing on fresh refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusKey, settings, stage, revealedKey, accent, cutaway, endsKey, blockingKey]);
+  }, [focusKey, settings, stage, revealedKey, accent, cutaway, endsKey, blockingKey, boxesKey]);
 
   const viewBtn: React.CSSProperties = {
     border: "none",

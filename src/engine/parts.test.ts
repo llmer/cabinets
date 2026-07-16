@@ -321,6 +321,72 @@ describe("genParts — open boxes", () => {
   });
 });
 
+describe("drawerBoxSpecs — the box is sized to the RUN opening, not a solo one", () => {
+  // A framed bay in a run carries only HALF a stile at each joint, so its
+  // opening — and its drawer box — is WIDER than a standalone cabinet's. The
+  // box used to be derived solo (always W − 2×frameWidth) while the inset FRONT
+  // was derived from the run: the boxes came out undersized and the slide line
+  // moved inboard, which piled on pack-out. Pin both ends of that.
+  const framed = makeCabinet("base", "FF", {
+    width: 18,
+    construction: "framed",
+    overlay: "inset",
+    frontStyle: "drawers",
+    drawerCount: 3,
+  });
+
+  it("solo bay: box = W − two full stiles − 1\" of slide, centred", () => {
+    const [b] = drawerBoxSpecs(framed, S);
+    expect(b.boxWidth).toBe(14); // 18 − 1.5 − 1.5 − 1
+    expect(b.boxLeft).toBe(2); // stile 1.5 + 1/2" slide
+    expect(b.boxLeft + b.boxWidth).toBe(16); // symmetric — 2" clear each side
+  });
+
+  it("run bay: a half stile at each joint widens the box by that half stile", () => {
+    const [b] = drawerBoxSpecs(framed, S, {
+      emitFaceFrame: false,
+      leftEnd: false,
+      rightEnd: false,
+    });
+    expect(b.boxWidth).toBe(15.5); // 18 − 0.75 − 0.75 − 1 (was 14 when solo-derived)
+    expect(b.boxLeft).toBe(1.25);
+  });
+
+  it("run END bay: full stile outboard, half stile at the joint — box hangs off centre", () => {
+    const [b] = drawerBoxSpecs(framed, S, {
+      emitFaceFrame: false,
+      leftEnd: false,
+      rightEnd: true,
+    });
+    expect(b.boxWidth).toBe(14.75); // 18 − 0.75 − 1.5 − 1
+    expect(b.boxLeft).toBe(1.25); // NOT the carcass centre (which would be 1.625)
+  });
+
+  it("takes the run's own openingWidth when the run supplies one", () => {
+    const [b] = drawerBoxSpecs(framed, S, { emitFaceFrame: false, openingWidth: 15.25 });
+    expect(b.boxWidth).toBe(14.25);
+  });
+
+  it("the box and the inset FRONT are keyed off the SAME opening", () => {
+    const frame = { emitFaceFrame: false, openingWidth: 15.25 };
+    const { parts, geometry } = genParts(framed, S, frame);
+    const front = find(parts, "Drawer front")!;
+    // front = opening − 2 reveals; box = opening − 1" of slide. Both from 15.25.
+    expect(front.length).toBe(15); // 15.25 − 2×0.125
+    expect(geometry.drawerBoxes[0].boxWidth).toBe(14.25);
+    // the box must still pass through the opening it lives behind
+    expect(geometry.drawerBoxes[0].boxWidth).toBeLessThan(15.25);
+  });
+
+  it("frameless bays are unaffected — opening === carcass interior", () => {
+    const fl = makeCabinet("base", "FL", { width: 18, frontStyle: "drawers", drawerCount: 3 });
+    const solo = drawerBoxSpecs(fl, S)[0];
+    const run = drawerBoxSpecs(fl, S, { emitFaceFrame: false, leftEnd: false, rightEnd: true })[0];
+    expect(solo.boxWidth).toBe(15.5); // 18 − 2×0.75 − 1
+    expect(run.boxWidth).toBe(solo.boxWidth); // no stiles to share
+  });
+});
+
 describe("slideBlockingSpecs — slide pack-out for framed drawer bays", () => {
   // 18" framed drawer stack: box = 18 - 2×1.5 - 1 = 14" wide, 3/4" ply walls.
   const framed = makeCabinet("base", "FF", {
@@ -345,30 +411,35 @@ describe("slideBlockingSpecs — slide pack-out for framed drawer bays", () => {
     expect(bl[0].width).toBe(4);
   });
 
-  it("run end bay: thick strip at the full end stile, thin at the shared half-stile joint", () => {
+  it("run end bay: a strip at the full end stile, NONE at the shared half-stile joint", () => {
     // B3-style right end: 3/4" half-stile on the left, 1 1/2" end stile on the right.
     const bl = slideBlockingSpecs(framed, S, {
       emitFaceFrame: false,
       leftEnd: false,
       rightEnd: true,
     });
-    // opening 0.75→16.5 centred at 8.625; box 14 → planes 1.125 / 16.125
-    expect(bl[0].plane).toBe(1.125);
-    expect(bl[0].thickness).toBe(0.375); // 1.125 − 0.75 wall
-    expect(bl[1].plane).toBe(16.125);
-    expect(bl[1].thickness).toBe(1.125); // 18 − 0.75 wall − 16.125
+    // The box sizes to the RUN opening (0.75→16.5, box 14.75), so each slide
+    // plane lands exactly on its stile's inner edge — the real-world rule.
+    // The left half-stile is already flush with the 3/4" carcass wall, so that
+    // side needs no pack-out at all and drops out.
+    expect(bl.map((b) => b.side)).toEqual(["right"]);
+    expect(bl[0].plane).toBe(16.5); // == the end stile's inner edge
+    expect(bl[0].thickness).toBe(0.75); // stile 1.5 − wall 0.75
     expect(bl[0].layers).toBe(1);
-    expect(bl[1].layers).toBe(2); // more than one ply thickness → laminate two
   });
 
-  it("a shared partition halves the wall in this bay and the strip thickens to meet it", () => {
+  it("a shared partition halves the wall, leaving a sub-ply pack-out to shim", () => {
     const bl = slideBlockingSpecs(framed, S, {
       emitFaceFrame: false,
       leftEnd: false,
       rightEnd: true,
       shareLeft: true,
     });
-    expect(bl[0].thickness).toBe(0.75); // 1.125 − half a 3/4" partition
+    // half-stile 0.75 − half a 3/4" partition = 3/8" — thinner than one ply, so
+    // it is all shim (rounding UP to a ply would push the slide past its line).
+    expect(bl[0].side).toBe("left");
+    expect(bl[0].thickness).toBe(0.375);
+    expect(bl[0].layers).toBe(0);
   });
 
   it("frameless boxes need no pack-out — slides mount straight to the carcass", () => {
@@ -384,9 +455,10 @@ describe("slideBlockingSpecs — slide pack-out for framed drawer bays", () => {
     expect(strip.width).toBe(4);
     expect(strip.role).toBe("carcass");
     expect(geometry.slideBlocking).toHaveLength(2);
-    // a run-end bay laminates the end side: 3 × (1 + 2) = 9 strips
+    // a run-end bay packs out the END side only — the half-stile joint is
+    // already flush with the wall: 3 drawers × 1 strip = 3
     const runEnd = genParts(framed, S, { emitFaceFrame: false, leftEnd: false, rightEnd: true });
-    expect(find(runEnd.parts, "Slide blocking strip")!.qty).toBe(9);
+    expect(find(runEnd.parts, "Slide blocking strip")!.qty).toBe(3);
     // suppressed with the drawer boxes; absent on doors-only and frameless boxes
     expect(find(genParts(framed, noBoxes).parts, "Slide blocking strip")).toBeUndefined();
     const doors = makeCabinet("base", "D", { construction: "framed", frontStyle: "doors", doorCount: 2 });

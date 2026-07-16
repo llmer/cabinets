@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, makeCabinet, seedCabinets } from "@/domain/defaults";
 import { deskDeckTop } from "@/engine/drawers";
-import { slideBlockingSpecs } from "@/engine/parts";
+import { drawerBoxSpecs, slideBlockingSpecs } from "@/engine/parts";
 import { BUILD_STAGES, BuildStage } from "@/engine/steps";
 import { BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
 
@@ -237,24 +237,26 @@ describe("cabinetBuildParts — lockstep with the run-model face-frame changes",
   });
 });
 
-describe("cabinetBuildParts — full-depth carcass (front flush, captured back)", () => {
-  // Pins the carcass depth/position so a closed box's front sits at the front
-  // plane (flush with the front stretcher + face frame) and the applied back is
-  // captured inset at the rear — not a recessed front or a protruding full-width
-  // back. This geometry has no other automated coverage (the Three.js scene
-  // can't run headless), so these assertions are the guard against regressions.
-  const matT = 0.75; // carcass ply thickness in DEFAULT_SETTINGS
+describe("cabinetBuildParts — carcass depth + the APPLIED back", () => {
+  // Pins the back as the cut list describes it (`parts.ts`: sides cut D - backT,
+  // "Back (applied)" cut the full W × boxH): the carcass stops one back
+  // thickness shy of the wall and the back is screwed on OVER its rear edges, so
+  // it SHOWS from the side. The walkthrough used to draw the opposite — sides
+  // full depth with the back tucked inset between them — which is a set-in back
+  // nobody was ever told to cut, and it sent a real build the wrong way. The
+  // Three.js scene can't run headless, so these assertions are the only guard.
   const backT = 0.75; // applied-back ply thickness
   const c = makeCabinet("base", "B", { frontStyle: "doors", doorCount: 2, toeKick: false, depth: 24 });
   const D = c.depth;
   const parts = cabinetBuildParts(c, S);
 
-  it("runs the side panels the FULL depth — rear (0) to the front plane (D)", () => {
+  it("stops the side panels one back-thickness shy of the wall, front flush at D", () => {
     const sides = onStage(parts, "sides");
     expect(sides).toHaveLength(2);
     for (const s2 of sides) {
-      expect(s2.box[4]).toBeCloseTo(0, 5); // rear
-      expect(s2.box[5]).toBeCloseTo(D, 5); // front plane — no 3/4" recess
+      expect(s2.box[4]).toBeCloseTo(backT, 5); // rear — the applied back laps over this edge
+      expect(s2.box[5]).toBeCloseTo(D, 5); // front plane — no recess
+      expect(s2.box[5] - s2.box[4]).toBeCloseTo(D - backT, 5); // == the cut-list side width
     }
   });
 
@@ -262,22 +264,26 @@ describe("cabinetBuildParts — full-depth carcass (front flush, captured back)"
     const carc = onStage(parts, "carcass").filter((p) => p.kind === "carcass");
     const front = carc.find((p) => Math.abs(p.box[5] - D) < 0.01 && Math.abs(p.box[5] - p.box[4] - 4) < 0.01);
     expect(front).toBeTruthy(); // z = [D-4, D]
-    // paired with a rear stretcher against the back at z = [0, 4]
-    expect(carc.some((p) => Math.abs(p.box[4]) < 0.01 && Math.abs(p.box[5] - 4) < 0.01)).toBe(true);
+    // paired with a rear stretcher landing on the carcass rear plane, z = [backT, backT+4]
+    expect(
+      carc.some((p) => Math.abs(p.box[4] - backT) < 0.01 && Math.abs(p.box[5] - (backT + 4)) < 0.01),
+    ).toBe(true);
   });
 
-  it("captures the applied back INSET between the sides, tucked below the top stretcher", () => {
+  it("applies the back OVER the whole carcass rear — full W × boxH, edges showing", () => {
     const back = ofKind(parts, "back");
     expect(back).toHaveLength(1);
     const b = back[0];
-    expect(b.box[0]).toBeCloseTo(matT, 5); // inset a side thickness from the left
-    expect(b.box[1]).toBeCloseTo(c.width - matT, 5); // and from the right — NOT x0..x1
-    expect(b.box[4]).toBeCloseTo(0, 5); // rear face at the back
-    expect(b.box[5]).toBeCloseTo(backT, 5); // 3/4" thick, flush inside the full-depth sides
-    // its top stops BELOW the top back stretcher, which owns the top-rear corner
+    expect(b.box[0]).toBeCloseTo(0, 5); // full width, x0..x1 — NOT inset between the sides
+    expect(b.box[1]).toBeCloseTo(c.width, 5);
+    expect(b.box[4]).toBeCloseTo(0, 5); // rear face at the wall
+    expect(b.box[5]).toBeCloseTo(backT, 5); // and it laps the sides, which start at backT
+    // full box height too — it covers the top/bottom edges, no tuck-under
     const carc = onStage(parts, "carcass").filter((p) => p.kind === "carcass");
     const yTop = Math.max(...carc.map((p) => p.box[3]));
-    expect(b.box[3]).toBeLessThan(yTop - 0.5);
+    const yBot = Math.min(...carc.map((p) => p.box[2]));
+    expect(b.box[3]).toBeCloseTo(yTop, 5);
+    expect(b.box[2]).toBeCloseTo(yBot, 5);
   });
 });
 
@@ -432,14 +438,23 @@ describe("cabinetBuildParts — slide pack-out strips", () => {
     expect(Math.min(...boxBottoms.filter((y) => y > 26))).toBe(26.75);
   });
 
-  it("follows the run-aware blocking when the bay's geometry is passed in", () => {
-    const bl = slideBlockingSpecs(c, S, { emitFaceFrame: false, leftEnd: false, rightEnd: true });
-    const drawers = onStage(cabinetBuildParts(c, S, undefined, bl), "drawers");
-    // planes shift toward the shared half-stile: 1.125 / 16.125
-    expect(drawers.some((p) => p.box[0] === 0.75 && p.box[1] === 1.125)).toBe(true);
-    expect(drawers.some((p) => p.box[0] === 16.125 && p.box[1] === 17.25)).toBe(true);
-    // the box hangs centred under its front: left side at plane + 1/2"
-    expect(drawers.some((p) => p.box[0] === 1.625)).toBe(true);
+  it("follows the run-aware box + blocking when the bay's geometry is passed in", () => {
+    // A run bay must be handed BOTH — its boxes and its pack-out come off the
+    // same frame context. (Passing only the blocking used to leave the box at
+    // its solo size, so the render disagreed with the cut list.)
+    const f = { emitFaceFrame: false, leftEnd: false, rightEnd: true };
+    const bl = slideBlockingSpecs(c, S, f);
+    const bx = drawerBoxSpecs(c, S, f);
+    const drawers = onStage(cabinetBuildParts(c, S, undefined, bl, bx), "drawers");
+    // Left is a shared half-stile flush with the wall — no strip at all; the
+    // right end stile stands 3/4" proud, so one strip fills 16.5 → 17.25.
+    expect(drawers.some((p) => p.box[0] === 16.5 && p.box[1] === 17.25)).toBe(true);
+    expect(drawers.some((p) => p.box[0] === 0.75 && p.box[1] < 1.5)).toBe(false);
+    // The box hangs under the OPENING: left face at the half-stile + 1/2" slide,
+    // and it is 14 3/4" wide — the run opening less 1", NOT the solo 14".
+    expect(bx[0].boxWidth).toBe(14.75);
+    expect(drawers.some((p) => p.box[0] === 1.25)).toBe(true);
+    expect(drawers.some((p) => p.box[1] === 16)).toBe(true); // 1.25 + 14.75
   });
 
   it("draws no strips in a frameless box", () => {

@@ -270,6 +270,34 @@ export interface SlideBlockingSpec {
   plane: number;
 }
 
+/**
+ * One drawer box's outside dimensions. Sized to clear the front APERTURE — the
+ * face-frame opening when framed (widened at a shared run joint, which carries
+ * only a half stile), the carcass interior when frameless — so it is derived
+ * with the run frame context, exactly like `SlideBlockingSpec`.
+ */
+export interface DrawerBoxSpec {
+  /** 1-based position from the top. */
+  index: number;
+  /** The drawer FRONT height (inches). */
+  frontHeight: number;
+  /** Outside dimensions of the drawer box. */
+  boxWidth: number;
+  boxDepth: number;
+  boxHeight: number;
+  /**
+   * The box's LEFT face, inches from the cabinet's left outside edge. The box
+   * hangs under its opening (½″ in from each slide plane), which in a run bay
+   * is off the carcass centre — the stiles are asymmetric at a joint.
+   */
+  boxLeft: number;
+  sideThickness: number;
+  /** Bottom panel, captured in a 1/4" groove all round. */
+  bottomWidth: number;
+  bottomLength: number;
+  bottomThickness: number;
+}
+
 /** Geometry derived once per cabinet and shared by parts/steps/3D. */
 export interface CabinetGeometry {
   boxHeight: number;
@@ -293,6 +321,12 @@ export interface CabinetGeometry {
    * walkthrough 3D read it rather than re-deriving the run.
    */
   slideBlocking: SlideBlockingSpec[];
+  /**
+   * Every drawer box in this bay (empty = no drawers). Stamped by genParts from
+   * the run frame context — the steps, the walkthrough 3D and the main 3D read
+   * it rather than re-deriving the run and sizing the box to a solo opening.
+   */
+  drawerBoxes: DrawerBoxSpec[];
 }
 
 export interface CabinetParts {

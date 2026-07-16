@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Cabinet, Settings, SlideBlockingSpec } from "@/domain/types";
+import { Cabinet, DrawerBoxSpec, Settings, SlideBlockingSpec } from "@/domain/types";
 import { colorFor, three as T } from "@/theme";
 import {
   backThickness,
@@ -37,6 +37,8 @@ interface BuildFocus {
   ends?: BuildEnds;
   /** Run-aware slide pack-out (from the cut-list geometry). Omitted = solo. */
   blocking?: SlideBlockingSpec[];
+  /** Run-aware drawer boxes (from the cut-list geometry). Omitted = solo. */
+  boxes?: DrawerBoxSpec[];
 }
 
 /** How a build part is drawn relative to the current step's stage. */
@@ -410,6 +412,10 @@ export class CabinetScene {
     const run = ctx?.run;
     const continuous = !!run && run.framed && S.continuousFaceFrame && framed;
     const cd = openBox ? D : D - backT;
+    // Rear plane of the CARCASS. The back is APPLIED — it laps over the rear
+    // edges at z 0..backT and the box parts stop short of the wall, so the
+    // assembly still measures D deep. Matches `carcassDepth` / the cut list.
+    const cz0 = openBox ? 0 : backT;
     const x1 = x0 + W;
     const carcass = this.matCarcass;
 
@@ -441,22 +447,22 @@ export class CabinetScene {
     const nextM = run && ri >= 0 ? run.members[ri + 1] : undefined;
     const shareLeft = continuous && !!(rm && prevM && membersSharePartition(prevM, rm, S));
     const shareRight = continuous && !!(rm && nextM && membersSharePartition(rm, nextM, S));
-    // Sides run the FULL depth (0..D): the front sits at the front plane (flush
-    // with the front stretcher + proud face frame) and the rear stays flush with
-    // the inset applied back — no recessed front, no protruding back tongue.
-    if (!shareLeft) this.addBox(x0, x0 + matT, leftBot, yT, 0, D, carcass);
-    if (shareRight) this.addBox(x1 - matT / 2, x1 + matT / 2, rightBot, yT, 0, D, carcass);
-    else this.addBox(x1 - matT, x1, rightBot, yT, 0, D, carcass);
+    // Sides run cz0..D — the front sits at the front plane (flush with the front
+    // stretcher + proud face frame) and the rear stops one back-thickness shy of
+    // the wall, where the applied back laps over their rear edges.
+    if (!shareLeft) this.addBox(x0, x0 + matT, leftBot, yT, cz0, D, carcass);
+    if (shareRight) this.addBox(x1 - matT / 2, x1 + matT / 2, rightBot, yT, cz0, D, carcass);
+    else this.addBox(x1 - matT, x1, rightBot, yT, cz0, D, carcass);
     // Interior panels stop at the shared partition's inner face — half a panel in
     // from the joint wherever a side is shared, else at the bay's own side.
     const iL = x0 + (shareLeft ? matT / 2 : matT);
     const iR = x1 - (shareRight ? matT / 2 : matT);
-    if (!openBox) this.addBox(iL, iR, yB, yB + matT, 0, D, carcass);
+    if (!openBox) this.addBox(iL, iR, yB, yB + matT, cz0, D, carcass);
     if (c.type === "base") {
-      this.addBox(iL, iR, yT - matT, yT, 0, 4, carcass);
+      this.addBox(iL, iR, yT - matT, yT, cz0, cz0 + 4, carcass);
       this.addBox(iL, iR, yT - matT, yT, D - 4, D, carcass);
     } else {
-      this.addBox(iL, iR, yT - matT, yT, 0, D, carcass);
+      this.addBox(iL, iR, yT - matT, yT, cz0, D, carcass);
     }
     // Open box (appliance opening / desk knee): a pair of back stretchers on
     // edge (at the back, z≈0) tie the two sides together — one just under the top
@@ -466,11 +472,10 @@ export class CabinetScene {
       this.addBox(iL, iR, yT - matT - 4, yT - matT, 0, matT, carcass);
       this.addBox(iL, iR, yB, yB + 4, 0, matT, carcass);
     }
-    // Applied back: inset between the sides (not full width) and captured at the
-    // rear of the full-depth sides. Its top tucks just UNDER the top back
-    // stretcher (a hair's lap, no coplanar seam) so the stretcher owns the
-    // top-rear corner and the back reads as inset below it.
-    if (!openBox) this.addBox(iL, iR, yB, yT - matT + 0.06, 0, backT, carcass);
+    // Applied back: the FULL box face (W × boxH) screwed on OVER the assembled
+    // carcass, so its edges show from the side and the top. This is what squares
+    // the box — and what the cut list has always described.
+    if (!openBox) this.addBox(x0, x1, yB, yT, 0, backT, carcass);
     // Toe-kick base: recessed from the FRONT, and (with a separate base) set in
     // on the exposed END sides of the run too — the box-on-a-base look.
     if (c.type !== "wall" && c.toeKick !== false && !openBox && yB > 0) {
@@ -494,7 +499,8 @@ export class CabinetScene {
       if (!openBox && c.shelves > 0) {
         for (let i = 1; i <= c.shelves; i++) {
           const sy = yB + matT + ((boxH - 2 * matT) * i) / (c.shelves + 1);
-          this.addBox(iL, iR, sy, sy + 0.75, backT, D - 1, this.matCarcassIn);
+          // cz0..D-1: off the applied back's inner face, 1" shy of the front
+          this.addBox(iL, iR, sy, sy + 0.75, cz0, D - 1, this.matCarcassIn);
         }
       }
       this.addDrawerBoxes3D(c, x0, yT, fz0, ctx);
@@ -667,8 +673,6 @@ export class CabinetScene {
       c.frontStyle === "drawers" || c.frontStyle === "desk" || c.frontStyle === "door_drawer";
     if (!hasDrawers) return;
     const S = this.settings;
-    const specs = drawerBoxSpecs(c, S);
-    if (!specs.length) return;
     const dt = S.stocks[S.roleStock.drawerBox].thickness;
     const bt = S.stocks[S.roleStock.drawerBottom].thickness;
     const inset = isInset(c);
@@ -678,22 +682,25 @@ export class CabinetScene {
     const slotTop = inset ? topBorderWidth(c, S) : 0.125;
     const runOwned =
       !!ctx && ctx.run.framed && S.continuousFaceFrame && ctx.run.members.length > 1 && isFramed(c);
-    const packs = slideBlockingSpecs(
-      c,
-      S,
-      runOwned ? bayFrameContext(ctx.run, ctx.run.members.indexOf(ctx.m), S) : undefined,
-    );
-    const packL = packs.find((b) => b.side === "left");
+    // The SAME frame context feeds the box and its pack-out — a bay at a shared
+    // joint has a wider opening, so both must see it or the box renders narrow.
+    const bayFrame = runOwned
+      ? bayFrameContext(ctx.run, ctx.run.members.indexOf(ctx.m), S)
+      : undefined;
+    const specs = drawerBoxSpecs(c, S, bayFrame);
+    if (!specs.length) return;
+    const packs = slideBlockingSpecs(c, S, bayFrame);
     const railGap = inset ? insetStackGap(c, S) : 0.125;
     const heights = getDrawerHeights(c, S);
-    const W = c.width;
     const m = this.matCarcassIn;
     let top = yT - slotTop;
     heights.forEach((dh, i) => {
       const sp = specs[i];
       if (!sp) return;
       const slotBottom = top - dh;
-      const bx0 = x0 + (packL ? packL.plane + 0.5 : (W - sp.boxWidth) / 2);
+      // Position comes off the spec — the box hangs under the OPENING, which in
+      // a run bay is off the carcass centre (asymmetric stiles).
+      const bx0 = x0 + sp.boxLeft;
       const bx1 = bx0 + sp.boxWidth;
       const bz1 = fz0 - 0.25;
       const bz0 = Math.max(0.75, bz1 - sp.boxDepth);
@@ -805,17 +812,18 @@ export class CabinetScene {
     showFronts: boolean,
     ends?: BuildEnds,
     blocking?: SlideBlockingSpec[],
+    boxes?: DrawerBoxSpec[],
   ) {
     this.settings = settings;
     this.showFronts = showFronts;
     this.lastRunKey = null;
-    this.focus = { cabinet, stage, revealed: new Set(revealedStages), accent, ends, blocking };
+    this.focus = { cabinet, stage, revealed: new Set(revealedStages), accent, ends, blocking, boxes };
     this.rebuild();
   }
 
   /** Build the staged geometry for the focused cabinet. */
   private renderBuild(f: BuildFocus) {
-    const parts = cabinetBuildParts(f.cabinet, this.settings, f.ends, f.blocking);
+    const parts = cabinetBuildParts(f.cabinet, this.settings, f.ends, f.blocking, f.boxes);
     for (const p of parts) {
       // Cutaway gate: fronts hide the interior, so show one or the other.
       if (this.showFronts) {

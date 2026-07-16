@@ -124,6 +124,23 @@ old plinth after the run model landed). The four:
    per-step build narration in `engine/steps.ts`).
 4. **2D elevation** — `views/cabFace.tsx` + `views/Elevation.tsx`.
 
+Two invariants the renderers have already broken once — both shipped to a real
+cut and are now pinned by tests:
+
+- **The back is APPLIED, not set in.** The carcass stops one back-thickness shy
+  of the wall (`carcassDepth` = `D - backThickness`) and `Back (applied)` is cut
+  the **full `W × boxHeight`**, screwed on over the rear edges — so it shows from
+  the side. The 3D drew the sides full-depth with the back tucked inset between
+  them; nobody was ever told to cut that back.
+- **A drawer box is sized to its bay's RUN opening**, not to a solo
+  `W - 2·frameWidth`. At a shared joint the bay carries only a HALF stile, so the
+  opening (and the box) is wider. Box, inset front and slide blocking must all
+  key off the same opening — `parts.ts:frontOpeningWidth`. Sizing the box solo
+  while the front used the run opening made the boxes undersized and tripled the
+  slide pack-out. The derived box/blocking specs are stamped onto
+  `CabinetParts.geometry` (`drawerBoxes` / `slideBlocking`); **read them from
+  there** rather than re-deriving — a bare `drawerBoxSpecs(c, s)` is the solo case.
+
 Rule: any change to face-frame / base / opening / desk geometry (rail widths,
 frame bottoms, the drawer deck, side recesses, …) must be applied to **all four**
 and pinned with colocated golden tests — `engine/*.test.ts` for the cut list and
