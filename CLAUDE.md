@@ -156,10 +156,17 @@ to `Settings` or `Stock`, add it to `DEFAULT_SETTINGS`/`DEFAULT_STOCKS` in
 `Stock` is a physical material; `Role` (carcass/back/front/drawerBox/…) maps to a
 `StockId` via `settings.roleStock`. Parts sharing a stock nest together; `linear`
 stock (hardwood face frame) is priced by the foot and never nested into sheets.
+A linear stock may carry `boards` — the actual boards on hand (width × length ×
+qty). When set, the sheets view plans rip-aware cuts from THOSE boards
+(`engine/packing.ts:packBoards`: crosscut a segment, rip it into strips, crosscut
+the parts) instead of assuming a bought board per part width; parts the boards
+can't produce surface as `board_oversize`/`board_shortfall` in the audit and as
+`summary.boardShort`. An empty/absent `boards` keeps the legacy per-profile plan
+on `stockLength`.
 
 ### UI specifics
 
-- Six views (`layout`, `cutlist`, `sheets`, `build`, `3d`, `settings`) switch on
+- Seven views (`layout`, `cutlist`, `sheets`, `pockets`, `build`, `3d`, `settings`) switch on
   `store.view` in `App.tsx`; the active tab is mirrored to the URL hash and is
   deep-linkable.
 - The 3D view (`three/CabinetScene.ts`, `views/ThreeView.tsx`) is `lazy`-loaded so
@@ -172,7 +179,10 @@ stock (hardwood face frame) is priced by the foot and never nested into sheets.
   `cabinetBuildParts`) keyed by the `BuildStage` that `engine/steps.ts` now tags
   onto every step. `BuildStepScene` is `lazy`-loaded too **and** gated behind a
   `mounted` flag in `BuildView`, so the node smoke test never instantiates a WebGL
-  canvas. Built/ghost is decided by the set of stages actually reached in the
+  canvas. The Pockets tab's 3D bench view follows the same pattern
+  (`views/PocketScenePanel.tsx` lazy + mount-gated in `PocketsView`; scene in
+  `three/pocketScene.ts`, pure marker layout in `three/pocketLayout.ts` with
+  colocated golden tests). Built/ghost is decided by the set of stages actually reached in the
   cabinet's step list (not a global stage order) — an appliance surround is framed
   *before* it is stood in place, so `faceFrame` can precede `base`.
   Step order follows real assembly: all **interior** work (`drawers` boxes,

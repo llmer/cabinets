@@ -4,7 +4,7 @@
  * generalized so each physical stock is nested on its own sheet size.
  */
 
-import { fmtLen } from "./units";
+import { fmtLen, r3 } from "./units";
 
 export interface PackRect {
   w: number;
@@ -283,4 +283,205 @@ export function packLinear(
     0,
   );
   return { boards, oversize, usedLength };
+}
+
+/* ------------------------------------------------------------------ */
+/* Board plan — rip the parts out of the boards you actually have      */
+/* ------------------------------------------------------------------ */
+
+/** One size of board on hand (mirrors the domain's LinearBoardSpec). */
+export interface BoardSpec {
+  width: number;
+  length: number;
+  qty: number;
+}
+
+/** A linear part that knows the profile width it must be ripped to. */
+export interface BoardItem extends LinearItem {
+  width: number;
+}
+
+/** One rip strip within a segment; cut offsets run from the segment start. */
+export interface BoardStrip {
+  cuts: LinearCut[];
+  used: number;
+}
+
+/**
+ * A crosscut section of a board, ripped into parallel strips of ONE profile
+ * width. The strip count never exceeds what the board's width yields:
+ * floor((boardW + kerf) / (ripWidth + kerf)).
+ */
+export interface BoardSegment {
+  /** Where the section starts along the board (inches). */
+  offset: number;
+  length: number;
+  ripWidth: number;
+  strips: BoardStrip[];
+}
+
+/** One physical board with its planned crosscut/rip segments. */
+export interface PlannedBoard {
+  width: number;
+  length: number;
+  segments: BoardSegment[];
+  /** Length consumed off the board so far (crosscut kerfs included). */
+  used: number;
+}
+
+export interface BoardPack {
+  stockId: string;
+  label: string;
+  thickness: number;
+  /** The boards on hand, as declared on the stock. */
+  specs: BoardSpec[];
+  /** Physical boards the plan actually uses. */
+  boards: PlannedBoard[];
+  /** Parts no board size can produce (too wide or too long). */
+  oversize: BoardItem[];
+  /** Parts that fit a board size but ran out of boards. */
+  shortfall: BoardItem[];
+  /** Total length of placed parts (inches), excluding kerfs + drops. */
+  usedLength: number;
+}
+
+/**
+ * Plan the linear parts onto the specific boards on hand: crosscut a segment
+ * off a board, rip it into strips of one profile width, crosscut the parts
+ * from the strips. Greedy, widest profile first — wide parts have the fewest
+ * homes, so they claim board cross-section before narrow parts fill the rest.
+ * Boards are chosen narrowest-adequate-first so a wide board isn't burned on
+ * a part a narrow board could carry.
+ */
+export function packBoards(
+  items: BoardItem[],
+  specs: BoardSpec[],
+  kerf: number,
+): {
+  boards: PlannedBoard[];
+  oversize: BoardItem[];
+  shortfall: BoardItem[];
+  usedLength: number;
+} {
+  const oversize: BoardItem[] = [];
+  const usable: BoardItem[] = [];
+  const fitsSomeSpec = (it: BoardItem) =>
+    specs.some((sp) => sp.width + EPS >= it.width && sp.length + EPS >= it.length);
+  for (const it of items) (fitsSomeSpec(it) ? usable : oversize).push(it);
+
+  const widths = [...new Set(usable.map((it) => it.width))].sort((a, b) => b - a);
+  const pool = specs.map((sp) => ({ ...sp }));
+  const boards: PlannedBoard[] = [];
+  const shortfall: BoardItem[] = [];
+
+  for (const w of widths) {
+    const queue = usable.filter((it) => it.width === w).sort((a, b) => b.length - a.length);
+    while (queue.length) {
+      const it = queue[0];
+
+      // Crosscut a new segment: pick the narrowest board that can carry the
+      // longest waiting part — opened boards before fresh ones, tightest
+      // remaining length first.
+      type Cand = {
+        board?: PlannedBoard;
+        spec?: (typeof pool)[number];
+        width: number;
+        avail: number;
+      };
+      const cands: Cand[] = [];
+      for (const b of boards) {
+        const avail = b.length - b.used - (b.used > 0 ? kerf : 0);
+        if (b.width + EPS >= w && avail + EPS >= it.length)
+          cands.push({ board: b, width: b.width, avail });
+      }
+      for (const sp of pool) {
+        if (sp.qty > 0 && sp.width + EPS >= w && sp.length + EPS >= it.length)
+          cands.push({ spec: sp, width: sp.width, avail: sp.length });
+      }
+      if (cands.length === 0) {
+        shortfall.push(queue.shift()!);
+        continue;
+      }
+      cands.sort(
+        (a, b) =>
+          a.width - b.width ||
+          (a.board ? 0 : 1) - (b.board ? 0 : 1) ||
+          a.avail - b.avail,
+      );
+      const chosen = cands[0];
+      let board = chosen.board;
+      if (!board) {
+        chosen.spec!.qty -= 1;
+        board = { width: chosen.spec!.width, length: chosen.spec!.length, segments: [], used: 0 };
+        boards.push(board);
+      }
+
+      // Rip the segment into as many strips of this width as the board yields.
+      const offset = board.used > 0 ? r3(board.used + kerf) : 0;
+      const cap = r3(board.length - offset);
+      const nStrips = Math.floor((board.width + kerf + EPS) / (w + kerf));
+
+      // First-fit-decreasing the queue into up to nStrips strips no longer
+      // than `limit`, without touching the queue itself.
+      const ffdInto = (limit: number): { strips: BoardStrip[]; placedIdx: number[] } => {
+        const strips: BoardStrip[] = [];
+        const placedIdx: number[] = [];
+        queue.forEach((q, qi) => {
+          let strip = strips.find(
+            (st) => st.used + (st.cuts.length ? kerf : 0) + q.length <= limit + EPS,
+          );
+          if (!strip && strips.length < nStrips && q.length <= limit + EPS) {
+            strip = { cuts: [], used: 0 };
+            strips.push(strip);
+          }
+          if (strip) {
+            const at = r3(strip.used + (strip.cuts.length ? kerf : 0));
+            strip.cuts.push({ ...q, offset: at });
+            strip.used = r3(at + q.length);
+            placedIdx.push(qi);
+          }
+        });
+        return { strips, placedIdx };
+      };
+      const maxUsed = (strips: BoardStrip[]) => Math.max(...strips.map((st) => st.used));
+      const lengthsKey = (idx: number[]) =>
+        idx.map((i2) => queue[i2].length).sort((a, b) => a - b).join(",");
+
+      // MULTIFIT refinement: the segment is one crosscut across the whole
+      // board, so binary-search the SHORTEST segment that still carries the
+      // very same parts — a plain greedy can burn board length here and
+      // strand a later (narrower) profile.
+      let best = ffdInto(cap);
+      const wanted = lengthsKey(best.placedIdx);
+      let lo = Math.max(...best.placedIdx.map((i2) => queue[i2].length));
+      let hi = maxUsed(best.strips);
+      for (let iter = 0; iter < 30 && hi - lo > 1e-4; iter++) {
+        const mid = (lo + hi) / 2;
+        const trial = ffdInto(mid);
+        if (trial.placedIdx.length === best.placedIdx.length && lengthsKey(trial.placedIdx) === wanted) {
+          best = trial;
+          hi = maxUsed(trial.strips);
+        } else {
+          lo = mid;
+        }
+      }
+
+      const strips = best.strips;
+      for (const qi of [...best.placedIdx].sort((a, b) => b - a)) queue.splice(qi, 1);
+      const segLen = r3(maxUsed(strips));
+      board.segments.push({ offset, length: segLen, ripWidth: w, strips });
+      board.used = r3(offset + segLen);
+    }
+  }
+
+  const usedLength = boards.reduce(
+    (a, b) =>
+      a +
+      b.segments.reduce(
+        (c, seg) => c + seg.strips.reduce((d, st) => d + st.cuts.reduce((e, x) => e + x.length, 0), 0),
+        0,
+      ),
+    0,
+  );
+  return { boards, oversize, shortfall, usedLength };
 }

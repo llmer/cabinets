@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, makeCabinet, seedCabinets } from "@/domain/defaults";
+import { deskDeckTop } from "@/engine/drawers";
+import { slideBlockingSpecs } from "@/engine/parts";
 import { BUILD_STAGES, BuildStage } from "@/engine/steps";
 import { BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
 
@@ -187,6 +189,31 @@ describe("cabinetBuildParts — lockstep with the run-model face-frame changes",
     expect(base.box[1]).toBeCloseTo(b1.width - S.toeKickSideRecess, 5);
   });
 
+  it("drops only the EXPOSED end to the frame line when run ends are given", () => {
+    const b1 = makeCabinet("base", "B1", {
+      construction: "framed",
+      overlay: "inset_rail",
+      frontStyle: "door_drawer",
+      drawerCount: 1,
+      toeKick: true,
+    });
+    // B1-style bay: exposed LEFT end, shared side on the right
+    const parts = cabinetBuildParts(b1, S, { left: true, right: false });
+    const sides = onStage(parts, "sides");
+    expect(sides).toHaveLength(2);
+    const [left, right] = sides;
+    expect(left.box[2]).toBeCloseTo(S.faceFrameFloorGap, 5); // End panel: down to 3.25
+    expect(right.box[2]).toBeCloseTo(S.toeKick, 5); // plain side: box bottom (4.5)
+    // the toe-kick base recesses under the exposed end only
+    const base = parts.find((p) => p.kind === "toeKick")!;
+    expect(base.box[0]).toBeCloseTo(S.toeKickSideRecess, 5);
+    expect(base.box[1]).toBeCloseTo(b1.width, 5);
+    // omitted ends = both exposed (standalone / run of one), the old behaviour
+    const solo = onStage(cabinetBuildParts(b1, S), "sides");
+    expect(solo[0].box[2]).toBeCloseTo(S.faceFrameFloorGap, 5);
+    expect(solo[1].box[2]).toBeCloseTo(S.faceFrameFloorGap, 5);
+  });
+
   it("frames a desk with a rail under the drawer + a deck panel, no bottom rail", () => {
     const dk = makeCabinet("base", "DK", {
       construction: "framed",
@@ -202,6 +229,11 @@ describe("cabinetBuildParts — lockstep with the run-model face-frame changes",
     // the deck is a full-depth carcass panel installed at the carcass stage
     const deck = onStage(pDk, "carcass").find((x) => x.kind === "carcass" && x.box[5] - x.box[4] > 10);
     expect(deck).toBeTruthy();
+    // its TOP face sits on the engine's deck line — the same number the build
+    // step quotes — with its underside flush under the mid rail
+    expect(deck!.box[3]).toBeCloseTo(deskDeckTop(dk, S), 5);
+    expect(deck!.box[3]).toBeCloseTo(26.75, 5); // 34.5 - 2 - 5 - 1.5 + 0.75
+    expect(deck!.box[2]).toBeCloseTo(26, 5);
   });
 });
 
@@ -254,5 +286,165 @@ describe("cabinetBuildParts — shelves appear in a plain door box", () => {
     const c = makeCabinet("wall", "W", { frontStyle: "doors", doorCount: 2, shelves: 2 });
     const parts = cabinetBuildParts(c, S);
     expect(onStage(parts, "shelves").filter((p) => p.kind === "shelf")).toHaveLength(2);
+  });
+});
+
+describe("cabinetBuildParts — pocket-hole markers (settings.pocketHoles)", () => {
+  const PH = { ...S, pocketHoles: true };
+
+  it("emits no markers when the setting is off", () => {
+    for (const c of seedCabinets()) {
+      for (const p of cabinetBuildParts(c, S)) expect(p.pockets).toBeUndefined();
+    }
+  });
+
+  it("every marker sits ON its part, exactly on one face plane", () => {
+    const cabs = [
+      ...seedCabinets(),
+      makeCabinet("base", "desk", { construction: "framed", overlay: "inset_rail", frontStyle: "desk", drawerCount: 1, toeKick: false }),
+      makeCabinet("base", "open", { construction: "framed", frontStyle: "opening" }),
+    ];
+    for (const c of cabs) {
+      for (const p of cabinetBuildParts(c, PH)) {
+        for (const d of p.pockets ?? []) {
+          const [x0, x1, y0, y1, z0, z1] = p.box;
+          expect(d.x).toBeGreaterThanOrEqual(x0 - 1e-6);
+          expect(d.x).toBeLessThanOrEqual(x1 + 1e-6);
+          expect(d.y).toBeGreaterThanOrEqual(y0 - 1e-6);
+          expect(d.y).toBeLessThanOrEqual(y1 + 1e-6);
+          expect(d.z).toBeGreaterThanOrEqual(z0 - 1e-6);
+          expect(d.z).toBeLessThanOrEqual(z1 + 1e-6);
+          const [nx, ny, nz] = d.n;
+          expect(Math.abs(nx) + Math.abs(ny) + Math.abs(nz)).toBe(1);
+          // the dot lies on the face its normal points out of
+          if (ny === -1) expect(d.y).toBeCloseTo(y0, 6);
+          if (ny === 1) expect(d.y).toBeCloseTo(y1, 6);
+          if (nz === -1) expect(d.z).toBeCloseTo(z0, 6);
+          if (nz === 1) expect(d.z).toBeCloseTo(z1, 6);
+        }
+      }
+    }
+  });
+
+  it("marks a base bottom's UNDERSIDE but flips a wall bottom to its inside TOP", () => {
+    const b = makeCabinet("base", "B", { frontStyle: "doors", doorCount: 2 });
+    const bParts = cabinetBuildParts(b, PH);
+    const bottom = bParts.find((p) => p.stage === "carcass" && p.pockets?.some((d) => d.n[1] === -1))!;
+    expect(bottom).toBeTruthy();
+    expect(bottom.pockets).toHaveLength(6); // 3 per end for a 24"-deep box
+    for (const d of bottom.pockets!) expect(d.y).toBeCloseTo(bottom.box[2], 6); // underside plane
+    const w = makeCabinet("wall", "W", { frontStyle: "doors", doorCount: 2 });
+    const wParts = cabinetBuildParts(w, PH);
+    const wBottom = wParts.find((p) => p.stage === "carcass" && p.box[2] === 0 && p.pockets)!;
+    expect(wBottom).toBeTruthy();
+    for (const d of wBottom.pockets!) {
+      expect(d.n).toEqual([0, 1, 0]); // pockets face UP, inside the cabinet
+      expect(d.y).toBeCloseTo(wBottom.box[3], 6);
+    }
+  });
+
+  it("marks the desk deck's TOP face — the knee space below stays clean", () => {
+    const c = makeCabinet("base", "D", { construction: "framed", overlay: "inset_rail", frontStyle: "desk", drawerCount: 1, toeKick: false });
+    const parts = cabinetBuildParts(c, PH);
+    // the deck is the only carcass-stage part that runs the full depth at panel thickness
+    const deck = parts.find(
+      (p) => p.stage === "carcass" && p.box[5] - p.box[4] > 20 && p.box[3] - p.box[2] < 1,
+    )!;
+    expect(deck).toBeTruthy();
+    expect(deck.pockets).toHaveLength(6);
+    for (const d of deck.pockets!) expect(d.n).toEqual([0, 1, 0]);
+  });
+
+  it("marks the drawer box front/back OUTSIDE faces, never the sides or bottom", () => {
+    const c = makeCabinet("base", "DR", { frontStyle: "drawers", drawerCount: 1 });
+    const parts = cabinetBuildParts(c, PH);
+    const boxParts = parts.filter((p) => p.kind === "drawerBox");
+    const withDots = boxParts.filter((p) => p.pockets);
+    expect(withDots).toHaveLength(2); // sub-front + back only
+    const fronts = withDots.filter((p) => p.pockets!.every((d) => d.n[2] === 1));
+    const backs = withDots.filter((p) => p.pockets!.every((d) => d.n[2] === -1));
+    expect(fronts).toHaveLength(1);
+    expect(backs).toHaveLength(1);
+    expect(fronts[0].pockets).toHaveLength(4); // 2 per end
+  });
+});
+
+describe("cabinetBuildParts — coverage gaps from adversarial review", () => {
+  const PH = { ...S, pocketHoles: true };
+
+  it("a framed FULL-OVERLAY desk still gets its deck (+ dots) and under-drawer rail", () => {
+    const c = makeCabinet("base", "OD", { construction: "framed", overlay: "full", frontStyle: "desk", drawerCount: 1, toeKick: false });
+    const parts = cabinetBuildParts(c, PH);
+    const deck = parts.find(
+      (p) => p.stage === "carcass" && p.box[5] - p.box[4] > 20 && p.box[3] - p.box[2] < 1,
+    )!;
+    expect(deck).toBeTruthy();
+    expect(deck.pockets).toHaveLength(6);
+    for (const d of deck.pockets!) expect(d.n).toEqual([0, 1, 0]); // top face
+    // the under-drawer rail exists too, on the (hidden) frame plane
+    expect(onStage(parts, "faceFrame").length).toBeGreaterThan(0);
+  });
+
+  it("frameless railed-inset divider rails carry back-face dots", () => {
+    const c = makeCabinet("base", "R", { overlay: "inset_rail", frontStyle: "drawers", drawerCount: 3 });
+    const parts = cabinetBuildParts(c, PH);
+    const rails = parts.filter((p) => p.stage === "drawers" && p.kind === "carcass" && p.pockets);
+    expect(rails).toHaveLength(2); // 3 drawers → 2 divider rails
+    for (const r of rails) {
+      expect(r.pockets).toHaveLength(4); // 2 per end
+      for (const d of r.pockets!) {
+        expect(d.n).toEqual([0, 0, -1]); // back face, seen in the cutaway
+        expect(d.z).toBeCloseTo(r.box[4], 6);
+      }
+    }
+  });
+});
+
+describe("cabinetBuildParts — slide pack-out strips", () => {
+  // 18" framed railed-inset drawer-over-door, toe kick: yB 4.5, yT 34.5, one 6" drawer.
+  const c = makeCabinet("base", "FF", {
+    width: 18,
+    construction: "framed",
+    overlay: "inset_rail",
+    frontStyle: "door_drawer",
+    doorCount: 2,
+    toeKick: true,
+  });
+
+  it("packs both walls out to the slide line at the drawers stage", () => {
+    const drawers = onStage(cabinetBuildParts(c, S), "drawers");
+    // 5 drawer-box panels + 2 pack-out strips
+    expect(drawers).toHaveLength(7);
+    // solo planes at the stile edges (1.5 / 16.5), strips fill wall → plane
+    const left = drawers.find((p) => p.box[0] === 0.75 && p.box[1] === 1.5)!;
+    const right = drawers.find((p) => p.box[0] === 16.5 && p.box[1] === 17.25)!;
+    expect(left).toBeTruthy();
+    expect(right).toBeTruthy();
+    // 4" wide, bottom edge 7/8" below the box bottom (slot 26.5 + 0.25 slide gap)
+    expect(left.box[2]).toBe(25.875);
+    expect(left.box[3]).toBe(29.875);
+  });
+
+  it("hangs the first inset slot under the 2\" top rail, matching the cut list", () => {
+    const parts = cabinetBuildParts(c, S);
+    // box bottom = yT 34.5 − top rail 2 − front 6 + 0.25 = 26.75
+    const boxBottoms = onStage(parts, "drawers").map((p) => p.box[2]);
+    expect(Math.min(...boxBottoms.filter((y) => y > 26))).toBe(26.75);
+  });
+
+  it("follows the run-aware blocking when the bay's geometry is passed in", () => {
+    const bl = slideBlockingSpecs(c, S, { emitFaceFrame: false, leftEnd: false, rightEnd: true });
+    const drawers = onStage(cabinetBuildParts(c, S, undefined, bl), "drawers");
+    // planes shift toward the shared half-stile: 1.125 / 16.125
+    expect(drawers.some((p) => p.box[0] === 0.75 && p.box[1] === 1.125)).toBe(true);
+    expect(drawers.some((p) => p.box[0] === 16.125 && p.box[1] === 17.25)).toBe(true);
+    // the box hangs centred under its front: left side at plane + 1/2"
+    expect(drawers.some((p) => p.box[0] === 1.625)).toBe(true);
+  });
+
+  it("draws no strips in a frameless box", () => {
+    const fl = makeCabinet("base", "FL", { width: 18, frontStyle: "drawers", drawerCount: 3 });
+    const drawers = onStage(cabinetBuildParts(fl, S), "drawers");
+    expect(drawers).toHaveLength(15); // 3 boxes × 5 panels, nothing else
   });
 });

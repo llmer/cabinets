@@ -1,6 +1,6 @@
 import { CSSProperties, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { color, font } from "@/theme";
-import { Cabinet, Settings, Units } from "@/domain/types";
+import { Cabinet, Settings, SlideBlockingSpec, Units } from "@/domain/types";
 import { constructionInfo } from "@/engine/labels";
 import { drawerBoxSpecs } from "@/engine/parts";
 import { fmtLen } from "@/engine/units";
@@ -48,6 +48,10 @@ interface FlatStep {
   framed: boolean;
   /** The source cabinet, for the per-step 3D render (absent if it went away). */
   cabinet?: Cabinet;
+  /** Which sides are exposed run ends (longer End panels), for the 3D. */
+  ends?: { left: boolean; right: boolean };
+  /** Run-aware slide pack-out from the cut-list geometry, for the 3D. */
+  blocking?: SlideBlockingSpec[];
   /** For a RUN-level group: the whole run's cabinets, rendered together in 3D. */
   runCabinets?: Cabinet[];
   /**
@@ -84,6 +88,12 @@ export function BuildView() {
       const specs = cp ? drawerBoxSpecs(cp.cabinet, settings) : [];
       const framed = cp?.geometry.framed ?? false;
       const cabinet = cp?.cabinet;
+      // Exposed run ends drop to the frame line in the 3D; a shared side stays
+      // at box height (read off the geometry — never re-derive the run here).
+      const ends = cp
+        ? { left: cp.geometry.endDropLeft > 0, right: cp.geometry.endDropRight > 0 }
+        : undefined;
+      const blocking = cp?.geometry.slideBlocking;
       // A run-level group (genRunSteps) renders the whole assembled run in 3D.
       const runCabinets = sg.runCabinetIds?.flatMap((id) => {
         const m = cabinetParts.find((c) => c.cabinet.id === id);
@@ -107,6 +117,8 @@ export function BuildView() {
           specs,
           framed,
           cabinet,
+          ends,
+          blocking,
           runCabinets,
           runFrameOn: runCabinets && attachIdx >= 0 ? idxInGroup >= attachIdx : undefined,
         });
@@ -534,6 +546,8 @@ function GuidedWalkthrough({
             >
               <BuildStepScene
                 cabinet={cur.cabinet}
+                ends={cur.ends}
+                blocking={cur.blocking}
                 runCabinets={cur.runCabinets}
                 runFrameOn={cur.runFrameOn}
                 settings={settings}

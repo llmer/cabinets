@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Cabinet, Settings } from "@/domain/types";
+import { Cabinet, Settings, SlideBlockingSpec } from "@/domain/types";
 import { colorFor, three as T } from "@/theme";
 import {
   backThickness,
@@ -11,13 +11,14 @@ import {
   isInset,
   isOpenBox,
   isRailInset,
+  topBorderWidth,
 } from "@/engine/geometry";
 import { getDrawerHeights } from "@/engine/drawers";
-import { drawerBoxSpecs } from "@/engine/parts";
+import { drawerBoxSpecs, slideBlockingSpecs } from "@/engine/parts";
 import { fmtLen } from "@/engine/units";
-import { Run, RunMember, membersSharePartition, runsOf } from "@/engine/runs";
+import { Run, RunMember, bayFrameContext, membersSharePartition, runsOf } from "@/engine/runs";
 import { BuildStage } from "@/engine/steps";
-import { BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
+import { BuildEnds, BuildPart, BuildPartKind, buildBaseY, cabinetBuildParts } from "./buildModel";
 
 type ViewPreset = "iso" | "front" | "top";
 
@@ -32,6 +33,10 @@ interface BuildFocus {
   /** Every stage reached at or before the current step — its parts are solid. */
   revealed: Set<BuildStage>;
   accent: string;
+  /** Which sides are exposed run ends (drop to the frame line). Omitted = both. */
+  ends?: BuildEnds;
+  /** Run-aware slide pack-out (from the cut-list geometry). Omitted = solo. */
+  blocking?: SlideBlockingSpec[];
 }
 
 /** How a build part is drawn relative to the current step's stage. */
@@ -78,6 +83,7 @@ export class CabinetScene {
   private matHandle: THREE.MeshStandardMaterial;
   private matGhost: THREE.MeshStandardMaterial;
   private matHighlight: THREE.MeshStandardMaterial;
+  private matPocket: THREE.MeshBasicMaterial;
   private frontMats: Record<string, THREE.MeshStandardMaterial> = {};
 
   private cabinets: Cabinet[] = [];
@@ -189,6 +195,8 @@ export class CabinetScene {
       roughness: 0.45,
       metalness: 0.05,
     });
+    // Pocket-hole decals on the build walkthrough parts (settings.pocketHoles).
+    this.matPocket = new THREE.MeshBasicMaterial({ color: T.handle, side: THREE.DoubleSide });
 
     this.orbit = { theta: 0.72, phi: 1.12, radius: 120, target: new THREE.Vector3() };
     this.group = new THREE.Group();
@@ -489,7 +497,7 @@ export class CabinetScene {
           this.addBox(iL, iR, sy, sy + 0.75, backT, D - 1, this.matCarcassIn);
         }
       }
-      this.addDrawerBoxes3D(c, x0, yT, fz0);
+      this.addDrawerBoxes3D(c, x0, yT, fz0, ctx);
       return;
     }
 
@@ -625,6 +633,13 @@ export class CabinetScene {
         hbar(ol, or, top - dh, top, false);
         top -= dh;
       });
+      // Framed desk under full overlay: the frame hides behind the proud
+      // fronts, but the DECK is real — it closes the drawer cavity off from
+      // the open knee (the cut list emits it for ANY framed desk).
+      if (desk && framed) {
+        const rg = S.frameWidth || 1.5;
+        this.addBox(iL, iR, top - rg, top - rg + matT, 0, cd, fm);
+      }
     } else if (c.frontStyle === "door_drawer") {
       const dh = getDrawerHeights(c, S)[0];
       this.addBox(ol, or, ot - dh + gap / 2, ot, fz0, fz1, fm);
@@ -641,7 +656,13 @@ export class CabinetScene {
   }
 
   /** Open drawer boxes drawn inside the carcass when fronts are hidden. */
-  private addDrawerBoxes3D(c: Cabinet, x0: number, yT: number, fz0: number) {
+  private addDrawerBoxes3D(
+    c: Cabinet,
+    x0: number,
+    yT: number,
+    fz0: number,
+    ctx?: { run: Run; m: RunMember },
+  ) {
     const hasDrawers =
       c.frontStyle === "drawers" || c.frontStyle === "desk" || c.frontStyle === "door_drawer";
     if (!hasDrawers) return;
@@ -651,22 +672,39 @@ export class CabinetScene {
     const dt = S.stocks[S.roleStock.drawerBox].thickness;
     const bt = S.stocks[S.roleStock.drawerBottom].thickness;
     const inset = isInset(c);
-    const ff = inset ? effectiveFrameWidth(c, S) : 0.125;
+    // First slot hangs under the TOP border (the wider face-frame top rail when
+    // framed) and the box hangs centred under its FRONT between the slide
+    // planes — run-aware, so a bay at a shared joint shifts like the cut list.
+    const slotTop = inset ? topBorderWidth(c, S) : 0.125;
+    const runOwned =
+      !!ctx && ctx.run.framed && S.continuousFaceFrame && ctx.run.members.length > 1 && isFramed(c);
+    const packs = slideBlockingSpecs(
+      c,
+      S,
+      runOwned ? bayFrameContext(ctx.run, ctx.run.members.indexOf(ctx.m), S) : undefined,
+    );
+    const packL = packs.find((b) => b.side === "left");
     const railGap = inset ? insetStackGap(c, S) : 0.125;
     const heights = getDrawerHeights(c, S);
     const W = c.width;
     const m = this.matCarcassIn;
-    let top = yT - ff;
+    let top = yT - slotTop;
     heights.forEach((dh, i) => {
       const sp = specs[i];
       if (!sp) return;
       const slotBottom = top - dh;
-      const bx0 = x0 + (W - sp.boxWidth) / 2;
+      const bx0 = x0 + (packL ? packL.plane + 0.5 : (W - sp.boxWidth) / 2);
       const bx1 = bx0 + sp.boxWidth;
       const bz1 = fz0 - 0.25;
       const bz0 = Math.max(0.75, bz1 - sp.boxDepth);
       const by0 = slotBottom + 0.25;
       const by1 = Math.max(by0 + 1, Math.min(top - 0.25, by0 + sp.boxHeight));
+      // Slide pack-out strips — wall out to the slide line at each drawer.
+      for (const pk of packs) {
+        const px0 = x0 + (pk.side === "left" ? pk.plane - pk.thickness : pk.plane);
+        const py0 = Math.max(carcassThickness(S), by0 - 0.875);
+        this.addBox(px0, px0 + pk.thickness, py0, py0 + pk.width, bz0, bz1, m);
+      }
       this.addBox(bx0, bx0 + dt, by0, by1, bz0, bz1, m); // left side
       this.addBox(bx1 - dt, bx1, by0, by1, bz0, bz1, m); // right side
       this.addBox(bx0, bx1, by0, by1, bz1 - dt, bz1, m); // sub-front
@@ -765,17 +803,19 @@ export class CabinetScene {
     revealedStages: BuildStage[],
     accent: string,
     showFronts: boolean,
+    ends?: BuildEnds,
+    blocking?: SlideBlockingSpec[],
   ) {
     this.settings = settings;
     this.showFronts = showFronts;
     this.lastRunKey = null;
-    this.focus = { cabinet, stage, revealed: new Set(revealedStages), accent };
+    this.focus = { cabinet, stage, revealed: new Set(revealedStages), accent, ends, blocking };
     this.rebuild();
   }
 
   /** Build the staged geometry for the focused cabinet. */
   private renderBuild(f: BuildFocus) {
-    const parts = cabinetBuildParts(f.cabinet, this.settings);
+    const parts = cabinetBuildParts(f.cabinet, this.settings, f.ends, f.blocking);
     for (const p of parts) {
       // Cutaway gate: fronts hide the interior, so show one or the other.
       if (this.showFronts) {
@@ -852,6 +892,22 @@ export class CabinetScene {
       );
       e.position.copy(m.position);
       this.group.add(e);
+    }
+    // Pocket-hole decals — flat dark ellipses on the drilled face, long axis
+    // pointing at the joining end the screw exits through. Ghosted parts skip
+    // them (they'd just read as noise through the transparency).
+    if (mode !== "ghost" && p.pockets?.length) {
+      for (const dot of p.pockets) {
+        const g2 = new THREE.CircleGeometry(0.27, 16);
+        const el = new THREE.Mesh(g2, this.matPocket);
+        el.scale.set(dot.along === "x" ? 2.1 : 1, dot.along === "y" ? 2.1 : 1, 1);
+        const [nx, ny, nz] = dot.n;
+        if (ny !== 0) el.rotation.x = ny > 0 ? -Math.PI / 2 : Math.PI / 2;
+        else if (nz < 0) el.rotation.y = Math.PI;
+        else if (nx !== 0) el.rotation.y = nx > 0 ? Math.PI / 2 : -Math.PI / 2;
+        el.position.set(dot.x + nx * 0.03, dot.y + ny * 0.03, dot.z + nz * 0.03);
+        this.group.add(el);
+      }
     }
   }
 

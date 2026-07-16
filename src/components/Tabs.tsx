@@ -5,6 +5,7 @@ const TABS: { key: ViewId; label: string }[] = [
   { key: "layout", label: "Layout" },
   { key: "cutlist", label: "Cut list" },
   { key: "sheets", label: "Sheets" },
+  { key: "pockets", label: "Pockets" },
   { key: "build", label: "Build" },
   { key: "3d", label: "3D view" },
   { key: "settings", label: "Settings" },

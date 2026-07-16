@@ -100,6 +100,9 @@ export const DEFAULT_SETTINGS: Settings = {
   faceFrameTop: 2,
   construction: "frameless",
   includeDrawerBoxes: true,
+  // Off by default: existing projects keep the generic fastener wording until
+  // the builder opts into pocket-hole joinery in Settings.
+  pocketHoles: false,
   showGuideLines: true,
   edgeBandPerFoot: 0.35,
   stocks: DEFAULT_STOCKS,

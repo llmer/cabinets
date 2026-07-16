@@ -1,5 +1,6 @@
 import { Cabinet, Settings } from "@/domain/types";
 import { boxHeight, isFramed, isOpenBox } from "./geometry";
+import type { FrameContext } from "./parts";
 import { r3 } from "./units";
 
 /**
@@ -170,6 +171,26 @@ export function membersSharePartition(a: RunMember, b: RunMember, s: Settings): 
     a.boxTop === b.boxTop &&
     isOpenBox(a.cabinet) === isOpenBox(b.cabinet)
   );
+}
+
+/**
+ * The `FrameContext` a run-owned bay hands to `genParts`: the run pass owns the
+ * face frame, the bay's opening widens at shared joints, and an exposed end
+ * drops its side panel to the frame line. Built here (not inline in `compute`)
+ * so the 3D scene derives the identical context and never drifts.
+ */
+export function bayFrameContext(run: Run, i: number, s: Settings): FrameContext {
+  const ms = run.members;
+  const m = ms[i];
+  return {
+    emitFaceFrame: false,
+    openingWidth: m.openingWidth,
+    sideDrop: Math.max(0, m.yB - m.frameBottom),
+    leftEnd: m.leftEnd,
+    rightEnd: m.rightEnd,
+    shareLeft: i > 0 && membersSharePartition(ms[i - 1], m, s),
+    shareRight: i < ms.length - 1 && membersSharePartition(m, ms[i + 1], s),
+  };
 }
 
 /** Contiguous spans of toe-kicked members within a run — one base ladder each. */

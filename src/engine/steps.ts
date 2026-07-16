@@ -1,10 +1,13 @@
-import { CabinetParts, Settings } from "@/domain/types";
+import { CabinetParts, Settings, SlideBlockingSpec } from "@/domain/types";
 import { bandingInchesPerPiece } from "./parts";
 import { Run } from "./runs";
-import { effectiveFrameWidth, isRailInset } from "./geometry";
+import { runFrameJoints } from "./runParts";
+import { backThickness, effectiveFrameWidth, isRailInset } from "./geometry";
 import { hingesForDoorHeight } from "./hardware";
 import { typeLabel } from "./labels";
-import { fmtLen } from "./units";
+import { pocketSpec, pocketsPerEnd, screwLabel } from "./pocketHoles";
+import { deskDeckTop } from "./drawers";
+import { fmtLen, r3 } from "./units";
 
 /**
  * A step may carry a `kind` so the interactive walkthrough can attach the
@@ -87,15 +90,16 @@ export function genSteps(
   cp: CabinetParts,
   s: Settings,
   color: string,
-  runOwned = false,
+  runLabel?: string,
 ): StepGroup {
   const { cabinet: c, geometry: g, parts } = cp;
   // In a multi-cabinet continuous run, the boxes are built individually and then
   // JOINED, and ONE face frame is fitted onto the whole assembled run — so the
   // placement (join + shared toe-kick base), the face frame, and the inset
   // fronts (which land in the frame) are all done at the RUN level (genRunSteps).
-  // A run-owned bay's walkthrough therefore builds only its box + interior here.
-  const runFrame = runOwned;
+  // A run-owned bay's walkthrough therefore builds only its box + interior here;
+  // `runLabel` names the run group so the bay can point the reader at it.
+  const runFrame = runLabel != null;
   const u = s.units;
   const steps: Step[] = [];
   const push = (t: string, stage: BuildStage, kind?: StepKind) =>
@@ -111,6 +115,26 @@ export function genSteps(
   const dims = `${fmtLen(c.width, u)} × ${fmtLen(c.height, u)} × ${fmtLen(c.depth, u)}`;
   const head = { id: c.id, name: c.name, typeLabel: typeLabel(c.type), color, dims };
 
+  // Pocket-hole joinery (opt-in): jig settings + screws derived from the
+  // stocks. A stock below the jig's 1/2" range gets NO spec — those joints
+  // keep the generic wording rather than unsafe pocket advice.
+  const ph = s.pocketHoles;
+  const boxSpec = ph ? pocketSpec(s.stocks[s.roleStock.carcass]) : null;
+  const boxScrews = boxSpec ? screwLabel(boxSpec, u) : "";
+  const jigLine = (what: string) =>
+    `Set the pocket-hole jig to ${fmtLen(boxSpec!.setting, u)} — the drill guide block AND the bit's stop collar — and drill the joinery pockets while the parts are still flat: ${what}. Every pocket goes in the NON-sanded face — the sanded face never takes a pocket.`;
+
+  // A run-owned bay's walkthrough ends at the box, so close with a pointer —
+  // otherwise the list reads as finished-but-missing its base/frame/fronts.
+  // Same stage as the last real step, so each stage stays one contiguous block.
+  const pushRunPointer = () => {
+    if (runFrame)
+      push(
+        `${c.name}'s box is done. Everything this bay shares happens at the run level — the join into the run, the toe-kick base, the ONE continuous face frame and the fronts — so continue in "Face frame + base · ${runLabel}".`,
+        steps[steps.length - 1].stage,
+      );
+  };
+
   if (c.frontStyle === "opening") {
     push(
       `Cut the 2 side panels and the top${c.type === "base" ? " stretchers plus two back stretchers" : " panel"} for the surround.`,
@@ -118,12 +142,30 @@ export function genSteps(
     );
     if (bandFt > 0)
       push(`Edge-band the exposed front edges (about ${bandFt} ft) and trim flush.`, "sides");
-    push(
-      c.type === "base"
-        ? "Join the two top stretchers between the side panels, then set the two back stretchers on edge — one just under the rear top stretcher and one across the back at floor level. They tie the sides together and keep the open surround from racking; the bottom one also gives you a rail to screw to the wall studs. There is no bottom or front; the appliance slides into the open bay."
-        : "Join the top panel between the side panels. There is no bottom, back or front — the appliance slides into the open bay.",
-      "carcass",
-    );
+    if (boxSpec)
+      push(
+        jigLine(
+          c.type === "base"
+            ? "2 in each end of the two top stretchers and of both back stretchers (NON-sanded faces — they end up facing up / toward the wall)"
+            : "a row across each end of the top panel's NON-sanded face (it becomes the top)",
+        ),
+        "carcass",
+      );
+    if (c.type === "base") {
+      push(
+        `Join the two 4" top stretchers between the side panels — the FRONT one first, flush with the side front edges, then the REAR one flush at the back${boxSpec ? ` (glue + ${boxScrews} pocket screws)` : ""}.`,
+        "carcass",
+      );
+      push(
+        `Set the two back stretchers on edge — first the upper one just under the rear top stretcher, then the lower one across the back at floor level${boxSpec ? ` (${boxScrews} pocket screws)` : ""}. They keep the open surround from racking; the bottom one also gives you a rail to screw to the wall studs. There is no bottom or front; the appliance slides into the open bay.`,
+        "carcass",
+      );
+    } else {
+      push(
+        `Join the top panel between the side panels${boxSpec ? ` (glue + ${boxScrews} pocket screws)` : ""}. There is no bottom, back or front — the appliance slides into the open bay.`,
+        "carcass",
+      );
+    }
     // Always confirm the appliance fits — the surround is sized to it, and this
     // is the ONLY place the walkthrough flags it (whether the bay is solo or a
     // run member whose placement/frame move to the run group).
@@ -131,16 +173,21 @@ export function genSteps(
       "Confirm the opening clears your appliance before you go further — measure its required width, depth and height plus the maker’s side and top clearances against this opening.",
       "carcass",
     );
-    if (g.framed && !runFrame)
+    if (g.framed && !runFrame) {
+      const openFF = ph ? pocketSpec(s.stocks[s.roleStock.faceFrame]) : null;
       push(
-        "Add the face-frame stiles and a top rail around the opening, flush to the outside edges.",
+        openFF
+          ? `Add the face-frame stiles and a top rail around the opening, flush to the outside edges — jig at ${fmtLen(openFF.setting, u)}, 2 pockets in the BACK of each stile's TOP end (they hang from the rail; there is no bottom rail), joined with ${screwLabel(openFF, u)} pocket screws.`
+          : "Add the face-frame stiles and a top rail around the opening, flush to the outside edges.",
         "faceFrame",
       );
+    }
     if (!runFrame)
       push(
         "Stand the surround in place, scribe it to the neighbouring cabinets or wall, and fasten.",
         "base",
       );
+    pushRunPointer();
     return { ...head, steps };
   }
 
@@ -161,32 +208,89 @@ export function genSteps(
     );
 
   if (c.frontStyle === "desk") {
-    push(
-      'Join the two 4" top stretchers between the side panels, then set two back stretchers on edge — one just under the rear top stretcher and one across the back at floor level (glue + confirmat screws). They tie the sides together and stiffen the open box. There is no bottom; the knee space stays open, and the desktop caps the top to keep it square.',
-      "carcass",
-    );
-    if (g.framed)
+    if (boxSpec) {
+      const deckRow = g.framed ? pocketsPerEnd(g.carcassDepth) : 0;
       push(
-        "Fit a deck panel across the interior just under the drawer — it closes the drawer cavity off from the open knee below; the face-frame rail faces its front edge.",
+        jigLine(
+          `2 in each end of the two top stretchers and of both back stretchers (NON-sanded faces — they end up facing up / toward the wall)${
+            deckRow
+              ? `, and ${deckRow} across each end of the drawer deck's NON-sanded face — it installs sanded face DOWN, so the pockets face up under the drawer and the open knee space below stays clean`
+              : ""
+          }`,
+        ),
         "carcass",
       );
+    }
+    push(
+      `Join the two 4" top stretchers between the side panels — the FRONT one first, flush with the side front edges, then the REAR one flush at the back (glue + ${boxSpec ? `${boxScrews} pocket screws` : "confirmat screws"}).`,
+      "carcass",
+    );
+    push(
+      `Set the two back stretchers on edge — first the upper one just under the rear top stretcher, then the lower one across the back at floor level${boxSpec ? ` (${boxScrews} pocket screws)` : ""}. They tie the sides together and stiffen the open box. There is no bottom; the knee space stays open, and the desktop caps the top to keep it square.`,
+      "carcass",
+    );
+    if (g.framed) {
+      // The deck line is stated only for inset/railed fits, where the frame
+      // opening IS the front so the number is exact; a proud overlay front
+      // shifts the stack off the frame math.
+      const deckTop = deskDeckTop(c, s);
+      const deckAt = g.inset
+        ? `, its TOP face ${fmtLen(r3(g.boxHeight - deckTop), u)} down from the top edge of the sides (${fmtLen(deckTop, u)} off the floor)`
+        : "";
+      push(
+        `Fit the deck panel across the interior just under the drawer — sanded face DOWN toward the open knee${deckAt}; it closes the drawer cavity off from below and the face-frame rail covers its front edge.${boxSpec ? ` Glue it in and drive the ${boxScrews} pocket screws from its TOP face down into the sides — the drawer hides them and the knee space stays clean.` : ""}`,
+        "carcass",
+      );
+    }
     push(
       "Fasten the desk's top surface down through the top stretchers, checking the frame for square as you go. The work top is supplied separately — it isn't cut from the plywood in this list.",
       "desktop",
     );
   } else {
-    if (c.type === "base")
+    if (boxSpec)
       push(
-        'Join the bottom and the two 4" top stretchers between the side panels (glue + confirmat screws or dowels, on the 32 mm lines). Keep front faces dead flush.',
+        jigLine(
+          c.type === "base"
+            ? `${pocketsPerEnd(g.carcassDepth)} across each end of the bottom's NON-sanded face (it becomes the underside), and 2 in each end of the two top stretchers' NON-sanded face (up, hidden under the counter)`
+            : c.type === "wall"
+              ? `${pocketsPerEnd(g.carcassDepth)} across each end of the top and of the bottom, always the NON-sanded face — the bottom installs sanded face DOWN because a wall cabinet's underside shows from below`
+              : `${pocketsPerEnd(g.carcassDepth)} across each end of the bottom and of the top, always the NON-sanded face (underside of the bottom, top of the top — both hidden on a tall box)`,
+        ),
         "carcass",
       );
-    else
+    // An exposed run end is cut as a LONGER End panel that drops to the
+    // face-frame floor line — the bottom does NOT follow it down, so spell out
+    // the vertical registration (align the tops; the drop hangs below).
+    const drop = Math.max(g.endDropLeft, g.endDropRight);
+    const endNote =
+      drop <= 0
+        ? ""
+        : g.endDropLeft > 0 && g.endDropRight > 0
+          ? ` NOTE both sides are the longer End panels — they run ${fmtLen(drop, u)} past the box at the foot, down to the face-frame line. Keep the TOPS flush: the bottom's underside sits ${fmtLen(drop, u)} up from each foot.`
+          : ` NOTE one side is the longer End panel — it runs ${fmtLen(drop, u)} past the box at the foot, down to the face-frame line, and goes on the run's ${g.endDropLeft > 0 ? "LEFT" : "RIGHT"} (exposed) end. Keep the TOPS flush: the bottom's underside lands flush with the plain side's foot, ${fmtLen(drop, u)} up from the End panel's foot.`;
+    if (c.type === "base") {
       push(
-        "Join the top and bottom between the side panels (glue + confirmat screws or dowels). Keep front faces dead flush.",
+        `Stand the two side panels on edge and join the BOTTOM between them — sanded face UP (the interior shows), front edges dead flush (glue + ${boxSpec ? `${boxScrews} pocket screws` : "confirmat screws or dowels, on the 32 mm lines"}).${endNote}`,
         "carcass",
       );
+      push(
+        `Add the two 4" top stretchers — the FRONT one first, flush with the side front edges, then the REAR one flush at the back${boxSpec ? ` (${boxScrews} pocket screws, pockets up)` : ""}. Measure the diagonals now, before the glue grabs.`,
+        "carcass",
+      );
+    } else {
+      push(
+        c.type === "wall"
+          ? `Stand the two side panels on edge and join the BOTTOM between them — sanded face DOWN (a wall cabinet's underside shows from below), front edges dead flush (glue + ${boxSpec ? `${boxScrews} pocket screws, pockets facing INSIDE` : "confirmat screws or dowels"}).`
+          : `Stand the two side panels on edge and join the BOTTOM between them — sanded face UP (the interior shows), front edges dead flush (glue + ${boxSpec ? `${boxScrews} pocket screws` : "confirmat screws or dowels"}).${endNote}`,
+        "carcass",
+      );
+      push(
+        `Add the TOP between the sides — sanded face DOWN into the cabinet, front edge flush${boxSpec ? ` (${boxScrews} pocket screws, pockets on the top face)` : ""}. Measure the diagonals now, before the glue grabs.`,
+        "carcass",
+      );
+    }
     push(
-      "Check for square — measure both diagonals, they should match — then screw on the 3/4\" back. The back is what holds the box square, so don’t skip it.",
+      `Check for square — measure both diagonals, they should match — then screw on the ${fmtLen(backThickness(s), u)} back. The back is what holds the box square, so don’t skip it.`,
       "back",
     );
   }
@@ -210,10 +314,13 @@ export function genSteps(
         c.type === "tall"
           ? " Then anchor the top back into the wall studs — a tall cabinet must be screwed to the wall so it can’t tip."
           : "";
+      const ladderPh = boxSpec
+        ? ` Pocket-screw the ladder together — 2 pockets per cross-member and side-return end (jig at ${fmtLen(boxSpec.setting, u)}), ${boxScrews} screws, pockets on the hidden back faces.`
+        : "";
       push(
         s.separateBase
-          ? `Build a separate toe-kick base — a ${fmtLen(s.toeKick, u)}-tall plywood ladder set back ~${fmtLen(s.toeKickDepth, u)} at the front and ~${fmtLen(s.toeKickSideRecess, u)} at any exposed end, with a fascia across the front. Level it, set this cabinet on top and screw down through the bottom; the face frame laps down over it to ~${fmtLen(s.faceFrameFloorGap, u)} off the floor.${tallNote}`
-          : `Build a toe-kick base — a simple ${fmtLen(s.toeKick, u)}-tall ladder set back ~${fmtLen(s.toeKickDepth, u)} from the front — level it, then set this cabinet on top and screw down through the bottom.${tallNote}`,
+          ? `Build a separate toe-kick base — a ${fmtLen(s.toeKick, u)}-tall plywood ladder set back ~${fmtLen(s.toeKickDepth, u)} at the front and ~${fmtLen(s.toeKickSideRecess, u)} at any exposed end, with a fascia across the front.${ladderPh} Level it, set this cabinet on top and screw down through the bottom; the face frame laps down over it to ~${fmtLen(s.faceFrameFloorGap, u)} off the floor.${tallNote}`
+          : `Build a toe-kick base — a simple ${fmtLen(s.toeKick, u)}-tall ladder set back ~${fmtLen(s.toeKickDepth, u)} from the front.${ladderPh} Level it, then set this cabinet on top and screw down through the bottom.${tallNote}`,
         "base",
       );
     }
@@ -251,8 +358,16 @@ export function genSteps(
         `Cut ~${ffl} ft of 3/4" hardwood into one continuous top rail${g.openBox ? "" : " and bottom rail"} the full width of the box, ${ffStiles} stiles and ${midRails} mid rail${midRails === 1 ? "" : "s"} — ${fmtLen(ffw, u)} wide (${fmtLen(ffTop, u)} top rail).`,
         "faceFrame",
       );
+      const ffSpec = ph ? pocketSpec(s.stocks[s.roleStock.faceFrame]) : null;
+      const stilePhrase = g.openBox
+        ? "each stile's TOP end only (with no bottom rail they run to the floor)"
+        : "each stile end";
       push(
-        "Pocket-screw the frame on the bench: the long rails run the full width and the stiles are captured between them — check it for square as you clamp.",
+        ffSpec
+          ? `Pocket-screw the frame on the bench — jig at ${fmtLen(ffSpec.setting, u)}, 2 pockets in the BACK of ${stilePhrase}${midRails > 0 ? " and of each mid-rail end" : ""}, joined with ${screwLabel(ffSpec, u)} pocket screws (fine thread bites hardwood; switch to coarse if your frame stock is a softwood like pine). The long rails run the full width${g.openBox ? "" : " and the stiles are captured between them"} — check it for square as you clamp.`
+          : ph
+            ? "Join the frame on the bench with glue and dowels or splines — the frame stock is below a pocket jig's 1/2\" range. The long rails run the full width and the stiles are captured between them — check it for square as you clamp."
+            : "Pocket-screw the frame on the bench: the long rails run the full width and the stiles are captured between them — check it for square as you clamp.",
         "faceFrame",
       );
       push(
@@ -271,27 +386,45 @@ export function genSteps(
   if (drw > 0) {
     const bw = fmtLen(c.width - 2 * effectiveFrameWidth(c, s) - 1, u);
     const bd = fmtLen(Math.floor(g.carcassDepth - 1), u);
-    const slideNote = g.framed
-      ? ' — bridge the side-mount slides out to the carcass with rear sockets or ~1" spacers, since the box is sized to the face-frame opening'
+    // Framed: the box clears the FACE-FRAME opening, so the walls get packed
+    // out to the slide line first. Quote the per-side pack-out from the
+    // geometry — it is asymmetric in a run (half stile at a joint, full stile
+    // at an exposed end) — and say where the strips sit.
+    const bl = g.slideBlocking;
+    const blThick = (sp: SlideBlockingSpec) =>
+      `${fmtLen(sp.thickness, u)}${sp.layers > 1 ? ` (${sp.layers} strips)` : ""}`;
+    const slideNote = bl.length
+      ? (() => {
+          const sides =
+            bl.length === 2 && bl[0].thickness !== bl[1].thickness
+              ? `${blThick(bl[0])} proud on the LEFT and ${blThick(bl[1])} on the RIGHT — the box hangs centred under its front, not in the carcass`
+              : `${blThick(bl[0])} proud on each side`;
+          return ` — the box is sized to the face-frame opening, so first pack each wall out to the slide line with the ${fmtLen(bl[0].length, u)} × ${fmtLen(bl[0].width, u)} blocking strips from the cut list (one per slide per side), ${sides}; set each strip's bottom edge ~7/8" below its drawer opening (on a desk that is resting on the deck) and shim until the slide faces sit exactly ${fmtLen(0.5, u)} off the box on both sides, or skip the strips and use face-frame rear-mount sockets`;
+        })()
       : "";
     // Frameless railed inset: the rails dividing the openings go in first.
     if (isRailInset(c) && !g.framed) {
       const railsN = c.frontStyle === "door_drawer" ? 1 : Math.max(0, drw - 1);
       if (railsN > 0)
         push(
-          `Cut and fit the ${railsN} inset rail${railsN > 1 ? "s" : ""} that divide the drawer openings, flush to the carcass front.`,
+          `Cut and fit the ${railsN} inset rail${railsN > 1 ? "s" : ""} that divide the drawer openings, flush to the carcass front${boxSpec ? ` — 2 pockets in each rail end (jig at ${fmtLen(boxSpec.setting, u)}, on the hidden top/back face), fastened with ${boxScrews} pocket screws` : ""}.`,
           "drawers",
         );
     }
 
+    const boxT = fmtLen(s.stocks[s.roleStock.drawerBox].thickness, u);
+    const botT = fmtLen(s.stocks[s.roleStock.drawerBottom].thickness, u);
+    const drwSpec = ph ? pocketSpec(s.stocks[s.roleStock.drawerBox]) : null;
     push(`Mount the drawer slides dead level at each opening${slideNote}.`, "drawers");
     push(
-      `Cut the parts for ${nN(drw, "drawer box", "drawer boxes")} (about ${bw} wide × ${bd} deep) — 1/2\" ply sides and front/back, 1/4\" ply bottoms; the exact per-drawer sizes are in the table below.`,
+      `Cut the parts for ${nN(drw, "drawer box", "drawer boxes")} (about ${bw} wide × ${bd} deep) — ${boxT} ply sides and front/back, ${botT} ply bottoms; the exact per-drawer sizes are in the table below.`,
       "drawers",
       "drawerBoxes",
     );
     push(
-      `Groove a 1/4\" slot 1/4\" up from the bottom edge of all four box parts, then glue and pin the sides to the front and back, slide the 1/4\" bottom in dry (no glue) and check each box for square.`,
+      drwSpec
+        ? `Groove a slot sized to the ${botT} bottom stock (test the fit on an offcut) 1/4\" up from the bottom edge of all four box parts, then re-set the pocket jig to ${fmtLen(drwSpec.setting, u)} (guide block + collar) and drill 2 pockets in each end of the front and back pieces, on their NON-sanded (outside) faces — sanded faces point INTO the box — and keep them clear of the groove. Assemble in order: screw the FRONT between the two sides, slide the bottom into its groove dry (no glue), then close the box with the BACK — ${screwLabel(drwSpec, u)} pocket screws — and check for square.`
+        : `Groove a slot sized to the ${botT} bottom stock (test the fit on an offcut) 1/4\" up from the bottom edge of all four box parts, then glue and pin the sides to the front and back, slide the bottom in dry (no glue) and check each box for square.`,
       "drawers",
     );
     push(
@@ -346,7 +479,14 @@ export function genSteps(
       );
   }
 
+  pushRunPointer();
   return { ...head, steps };
+}
+
+/** Display label for a run group: "B1–B3" (3+) or "B1 + B2". Shared by the
+ * run group's own name and the member bays' closing pointer, so they match. */
+export function runGroupLabel(names: string[]): string {
+  return names.length > 2 ? `${names[0]}–${names[names.length - 1]}` : names.join(" + ");
 }
 
 /**
@@ -366,10 +506,13 @@ export function genRunSteps(
   const push = (t: string, stage: BuildStage) => steps.push({ n: steps.length + 1, t, stage });
 
   const names = members.map((m) => m.cabinet.name);
-  const label = names.length > 2 ? `${names[0]}–${names[names.length - 1]}` : names.join(" + ");
+  const label = runGroupLabel(names);
   const ffw = s.frameWidth || 1.5;
   const ffTop = s.faceFrameTop || 2;
   const runW = fmtLen(run.members.reduce((a, m) => a + m.cabinet.width, 0), u);
+  const ph = s.pocketHoles;
+  const baseSpec = ph ? pocketSpec(s.stocks[s.roleStock.base]) : null;
+  const ffSpec = ph ? pocketSpec(s.stocks[s.roleStock.faceFrame]) : null;
 
   const wallRun = run.members.every((m) => m.cabinet.type === "wall");
   const anyToeKick =
@@ -390,25 +533,47 @@ export function genRunSteps(
   push(
     wallRun
       ? `Screw the finished boxes (${names.join(", ")}) together through the abutting side panels into one solid ${runW} run, then find the studs and hang the whole run on a level ledger at ${fmtLen(s.upperBottom, u)} off the floor — drive screws through the back rails into every stud, keeping the run dead straight.`
-      : `Stand the finished boxes (${names.join(", ")}) side by side in order and screw them together through the abutting side panels into one solid ${runW} run — check the fronts sit flush and the whole run is straight and square.`,
+      : `Stand the finished boxes side by side working left to right — ${names.join(", then ")} — clamp each joint with the FRONT faces dead flush, and screw them together through the abutting side panels into one solid ${runW} run. Check the whole run is straight and square before moving on.`,
     "base",
   );
   // 2. The shared toe-kick base under the toe-kicked bays (floor-standing bays sit on the floor).
-  if (anyToeKick)
+  if (anyToeKick) {
+    const ladderPh = baseSpec
+      ? ` Pocket-screw the ladder together — 2 pockets per cross-member and side-return end (jig at ${fmtLen(baseSpec.setting, u)}), ${screwLabel(baseSpec, u)} screws on the hidden back faces.`
+      : "";
     push(
       s.separateBase
-        ? `Build the separate toe-kick base — a ${fmtLen(s.toeKick, u)}-tall plywood ladder set back ~${fmtLen(s.toeKickDepth, u)} at the front and ~${fmtLen(s.toeKickSideRecess, u)} at each exposed end, with a recessed fascia. Level it, then set the run's toe-kicked cabinets on top and screw down; the floor-standing bays (appliance opening, desk) sit straight on the floor.`
-        : `Build the ${fmtLen(s.toeKick, u)}-tall toe-kick base under the toe-kicked cabinets, level it and set the run on top; the floor-standing bays sit straight on the floor.`,
+        ? `Build the separate toe-kick base — a ${fmtLen(s.toeKick, u)}-tall plywood ladder set back ~${fmtLen(s.toeKickDepth, u)} at the front and ~${fmtLen(s.toeKickSideRecess, u)} at each exposed end, with a recessed fascia.${ladderPh} Level it, then set the run's toe-kicked cabinets on top and screw down; the floor-standing bays (appliance opening, desk) sit straight on the floor.`
+        : `Build the ${fmtLen(s.toeKick, u)}-tall toe-kick base under the toe-kicked cabinets.${ladderPh} Level it and set the run on top; the floor-standing bays sit straight on the floor.`,
       "base",
     );
+  }
   // 3. Cut the individual frame members to length.
   push(
     `Cut the face-frame members to length from the hardwood — the full-run ${fmtLen(ffTop, u)} top rail, the ${fmtLen(ffw, u)} stiles (one SHARED at every bay joint)${anyToeKick ? ", the bottom rail over each toe-kicked span" : ""}, and the mid rails where the fronts stack. Every piece is listed in the ${run.members.length}-bay Run cut list.`,
     "faceFrame",
   );
-  // 4. Connect the separate members into ONE frame on the bench.
+  // 4. Connect the separate members into ONE frame on the bench. With pocket
+  // joinery on, spell out WHICH ends get pockets — a ladder frame's
+  // floor-running stiles (beside open bays) join only at the top, and a bottom
+  // rail that stops against one butts it end-on. Same joint model as the
+  // shopping list (runFrameJoints), so the text and the screw count agree.
+  const joints = ffSpec ? runFrameJoints(run, s) : null;
+  const frameScrews = joints
+    ? 2 * (joints.stileTopEnds + joints.stileBottomEnds + joints.railButtEnds + joints.midRailEnds)
+    : 0;
   push(
-    `Connect the members into ONE continuous frame for the whole ${runW} run on the bench — pocket-screw (or dowel) every joint, the long rails running the full width with the stiles captured between them and shared at every bay joint. It is built up from separate pieces, NOT milled from one board, so clamp it flat and dead square — one frame, not a frame per box.`,
+    ffSpec && joints
+      ? `Connect the members into ONE continuous frame for the whole ${runW} run on the bench — set the pocket jig to ${fmtLen(ffSpec.setting, u)} (guide block + collar) and drill 2 pockets in the BACK of every joining end: the TOP end of all ${joints.stileTopEnds} stiles${
+          joints.stileBottomEnds > 0
+            ? `, the bottom end of the ${joints.stileBottomEnds} that rest${joints.stileBottomEnds === 1 ? "s" : ""} on a bottom rail (floor-running stiles beside the open bays join only at the top)`
+            : ""
+        }${joints.midRailEnds > 0 ? ", both ends of every mid rail" : ""}${
+          joints.railButtEnds > 0
+            ? `, and the ${joints.railButtEnds} bottom-rail end${joints.railButtEnds === 1 ? "" : "s"} that butt${joints.railButtEnds === 1 ? "s" : ""} a full-height stile`
+            : ""
+        } — ${frameScrews} × ${screwLabel(ffSpec, u)} pocket screws in all (fine thread bites hardwood; use coarse for a softwood like pine). Assembly order: lay the top rail face-DOWN, stand every stile in position (pockets up) and screw their top ends, then the bottom rail against its resting stiles, then the mid rails. It is built up from separate pieces, NOT milled from one board, so clamp it flat and dead square — one frame, not a frame per box.`
+      : `Connect the members into ONE continuous frame for the whole ${runW} run on the bench — ${ph ? "glue and dowel or spline every joint (the frame stock is below a pocket jig's 1/2\" range)" : "pocket-screw (or dowel) every joint"}, the long rails running the full width with the stiles captured between them and shared at every bay joint. It is built up from separate pieces, NOT milled from one board, so clamp it flat and dead square — one frame, not a frame per box.`,
     "faceFrame",
   );
   // 5. Attach the assembled frame to the face of the run.

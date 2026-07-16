@@ -1,6 +1,7 @@
 import { Cabinet, Settings } from "@/domain/types";
 import {
   boxHeight,
+  carcassThickness,
   effectiveFrameWidth,
   faceHeight,
   insetStackGap,
@@ -94,6 +95,21 @@ export function getDrawerHeights(c: Cabinet, s: Settings): number[] {
   }
   if (!hs) hs = evenHeights(c, n, s);
   return hs;
+}
+
+/**
+ * TOP face of a framed desk's drawer deck, measured up from the box bottom (a
+ * desk stands on the floor, so this is also its height off the floor). The
+ * deck hangs one panel thickness below the drawer stack, its UNDERSIDE flush
+ * with the underside of the under-drawer face-frame rail — the rail covers the
+ * deck's front edge and the knee-space ceiling reads as one plane. Exact for
+ * inset/railed-inset fits, where the frame opening IS the front.
+ */
+export function deskDeckTop(c: Cabinet, s: Settings): number {
+  const gap = insetStackGap(c, s);
+  const hs = getDrawerHeights(c, s);
+  const stack = hs.reduce((a, x) => a + x, 0) + Math.max(0, hs.length - 1) * gap;
+  return r3(boxHeight(c, s) - topBorderWidth(c, s) - stack - gap + carcassThickness(s));
 }
 
 /**

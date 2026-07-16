@@ -4,8 +4,10 @@ import { renderToString } from "react-dom/server";
 import { useStore, ViewId } from "@/state/store";
 import { LayoutView } from "@/views/LayoutView";
 import { CutListView } from "@/views/CutListView";
-import { SheetPack, SheetsView } from "@/views/SheetsView";
+import { BoardPlanPack, SheetPack, SheetsView } from "@/views/SheetsView";
+import { PocketSchedule, PocketsView } from "@/views/PocketsView";
 import { compute } from "@/engine/compute";
+import { makeCabinet } from "@/domain/defaults";
 import { BuildView } from "@/views/BuildView";
 import { SettingsView } from "@/views/SettingsView";
 import { Header } from "@/components/Header";
@@ -21,6 +23,7 @@ describe("app render smoke test", () => {
     layout: LayoutView,
     cutlist: CutListView,
     sheets: SheetsView,
+    pockets: PocketsView,
     build: BuildView,
     settings: SettingsView,
   };
@@ -52,6 +55,45 @@ describe("app render smoke test", () => {
     );
     expect(html).toContain("rips "); // the ✂ caption under each sheet
     expect(html).toContain("dashed"); // the rip cut lines across the diagram
+  });
+
+  it("renders the rip-aware hardwood board plan when boards are on hand", () => {
+    const { settings } = useStore.getState().project;
+    const framed = [
+      makeCabinet("base", "B1", { width: 30, construction: "framed", overlay: "inset_rail" }),
+      makeCabinet("base", "B2", { width: 24, construction: "framed", overlay: "inset_rail" }),
+    ];
+    const s = {
+      ...settings,
+      stocks: {
+        ...settings.stocks,
+        hardwood: { ...settings.stocks.hardwood, boards: [{ width: 5.5, length: 144, qty: 4 }] },
+      },
+    };
+    const model = compute(framed, s);
+    expect(model.boardPacks).toHaveLength(1);
+    const html = renderToString(
+      createElement(BoardPlanPack, { pack: model.boardPacks[0], units: "in", kerf: s.kerf }),
+    );
+    expect(html).toContain("boards on hand"); // the header line
+    expect(html).toContain("rip "); // the ✂ caption under each board
+  });
+
+  it("renders the enabled pocket-hole schedule (SSR keeps the 3D subtree unmounted)", () => {
+    // Like the store-breakdown case: the SSR snapshot can't carry a flipped
+    // setting, so render the pure schedule with a pocketHoles-on model.
+    const { settings } = useStore.getState().project;
+    const framed = [
+      makeCabinet("base", "B1", { width: 30, construction: "framed", overlay: "inset_rail", frontStyle: "door_drawer", drawerCount: 1 }),
+      makeCabinet("base", "B2", { width: 24, construction: "framed", overlay: "inset_rail", frontStyle: "desk", drawerCount: 1, toeKick: false }),
+    ];
+    const s = { ...settings, pocketHoles: true };
+    const model = compute(framed, s);
+    expect(model.pocketPlan).toBeTruthy();
+    const html = renderToString(createElement(PocketSchedule, { model, settings: s }));
+    expect(html).toContain("Pockets go in"); // the schedule table
+    expect(html).toContain("Face frame"); // the joint panel
+    expect(html).not.toContain("Loading 3D"); // lazy subtree stays unmounted in SSR
   });
 
   it("reflects mutations through the store", () => {

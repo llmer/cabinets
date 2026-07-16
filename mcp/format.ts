@@ -12,6 +12,7 @@ import { Model } from "@/engine/compute";
 import { cabinetGeometry } from "@/engine/geometry";
 import { constructionInfo, frontStyleLabel, typeLabel } from "@/engine/labels";
 import { ripPlanText } from "@/engine/packing";
+import { pocketRow, screwLabel } from "@/engine/pocketHoles";
 import { drawerBoxSpecs } from "@/engine/parts";
 import { runsOf } from "@/engine/runs";
 import { fmtLen } from "@/engine/units";
@@ -58,7 +59,8 @@ export function summaryText(project: Project, model: Model): string {
       `${sm.slides} slide pairs, ${sm.pulls} pulls, ${sm.shelfPins} shelf pins`,
   );
   lines.push(`Est. cost:    ${sm.cost}`);
-  if (sm.oversize > 0) lines.push(`⚠ Oversize:   ${sm.oversize} part(s) don't fit a sheet — run audit_project.`);
+  if (sm.oversize > 0) lines.push(`⚠ Oversize:   ${sm.oversize} part(s) don't fit the stock — run audit_project.`);
+  if (sm.boardShort > 0) lines.push(`⚠ Board short: ${sm.boardShort} part(s) exceed the hardwood boards on hand — see get_sheets.`);
   if (runs.length > 1) {
     lines.push("");
     lines.push(`Runs (${runs.length}) — the run totals above span these physically-separate runs:`);
@@ -146,9 +148,13 @@ export function cutListText(model: Model, only?: string | string[]): string {
   return lines.join("\n").trimEnd();
 }
 
-/** Ordered assembly steps. `only` limits to one cabinet id. */
+/** Ordered assembly steps. `only` limits to one cabinet id — plus, for a bay in
+ * a continuous run, the run-level group that finishes it (join + base + ONE
+ * face frame + fronts), so a filtered read never looks mysteriously truncated. */
 export function stepsText(model: Model, only?: string): string {
-  const groups = only ? model.stepGroups.filter((g) => g.id === only) : model.stepGroups;
+  const groups = only
+    ? model.stepGroups.filter((g) => g.id === only || (g.runCabinetIds ?? []).includes(only))
+    : model.stepGroups;
   if (groups.length === 0) return only ? "(no steps for that id)" : "(empty)";
   const lines: string[] = [];
   for (const g of groups) {
@@ -172,6 +178,29 @@ export function sheetsText(model: Model, s: Settings): string {
       lines.push(`   ⚠ OVERSIZE: ${r.part} (${r.label}) ${L(r.w, s)} × ${L(r.h, s)} — won't fit`);
     }
   }
+  for (const bp of model.boardPacks) {
+    const onHand = bp.specs.map((sp) => `${sp.qty}× ${L(sp.width, s)} × ${L(sp.length, s)}`).join(", ");
+    lines.push(`${bp.label} — boards on hand: ${onHand} · plan uses ${bp.boards.length} board(s)`);
+    bp.boards.forEach((b, i) => {
+      lines.push(
+        `   Board ${i + 1} (${L(b.width, s)} × ${L(b.length, s)}) · drop ${L(Math.max(0, b.length - b.used), s)}`,
+      );
+      for (const seg of b.segments) {
+        const cuts = seg.strips
+          .map((st) => st.cuts.map((c) => `${c.part} ${L(c.length, s)}`).join(", "))
+          .join("  |  ");
+        lines.push(
+          `      ✂ crosscut ${L(seg.length, s)}, rip ${seg.strips.length}× ${L(seg.ripWidth, s)}: ${cuts}`,
+        );
+      }
+    });
+    for (const r of bp.oversize) {
+      lines.push(`   ⚠ OVERSIZE: ${r.part} (${r.label}) ${L(r.length, s)} × ${L(r.width, s)} — bigger than every board on hand`);
+    }
+    for (const r of bp.shortfall) {
+      lines.push(`   ⚠ SHORT: ${r.part} (${r.label}) ${L(r.length, s)} × ${L(r.width, s)} — boards ran out, buy more`);
+    }
+  }
   lines.push("");
   lines.push(`Total: ${model.summary.sheetCount} sheet(s), ${model.summary.yieldStr} yield.`);
   if (model.summary.storeCuts > 0) {
@@ -180,6 +209,52 @@ export function sheetsText(model: Model, s: Settings): string {
         `Rip widths are measured from the freshly cut edge, in order. Store cuts are rough: ` +
         `parts keep ${L(s.storeTrim, s)} clear of them to re-cut clean at home (explain "store_breakdown").`,
     );
+  }
+  return lines.join("\n");
+}
+
+/** The pocket-hole drill schedule: which pieces, how many, which (hidden) face. */
+export function pocketsText(model: Model, s: Settings): string {
+  const plan = model.pocketPlan;
+  if (!plan)
+    return "Pocket-hole joinery is OFF — enable it with update_settings { pocketHoles: true }.";
+  const lines: string[] = [];
+  lines.push(
+    "Pocket-hole schedule. ONE RULE: every pocket is drilled into the NON-sanded face — the " +
+      "sanded face never takes a pocket. Each row says which way the sanded face points when " +
+      "installed. Set the jig's drill guide block AND stop collar to the same stop.",
+  );
+  lines.push(
+    "Buy: " +
+      plan.totals
+        .map((t) => `${t.count} × ${screwLabel(t.spec, s.units)} (jig ${L(t.spec.setting, s)})`)
+        .join(" · ") +
+      " — plus spares",
+  );
+  for (const g of model.cutGroups) {
+    const rows = g.parts
+      .map((p) => ({ p, row: pocketRow(p.part, s, g.typeLabel === "Wall") }))
+      .filter((x): x is { p: (typeof g.parts)[number]; row: NonNullable<ReturnType<typeof pocketRow>> } => x.row != null);
+    const frame = plan.frames.find((f) => f.id === g.id);
+    if (rows.length === 0 && !frame) continue;
+    lines.push("", `### ${g.name}`);
+    for (const { p, row } of rows) {
+      lines.push(
+        `   ${p.qtyStr.padEnd(4)} ${p.name.padEnd(22)} ${row.perPiece}/pc in the ${row.face} · jig ${L(row.spec.setting, s)} · ${screwLabel(row.spec, s.units)} — ${row.showFace}`,
+      );
+    }
+    if (frame) {
+      const j = frame.joints;
+      const bits = [
+        `top end of all ${j.stileTopEnds} stiles`,
+        j.stileBottomEnds > 0 ? `bottom end of the ${j.stileBottomEnds} resting on a bottom rail` : "",
+        j.midRailEnds > 0 ? `both ends of every mid rail (${j.midRailEnds} ends)` : "",
+        j.railButtEnds > 0 ? `${j.railButtEnds} bottom-rail end(s) butting a full-height stile` : "",
+      ].filter(Boolean);
+      lines.push(
+        `   Face frame — 2 pockets in the BACK of each joining end (${bits.join("; ")}) · jig ${L(frame.spec.setting, s)} · ${frame.screws} × ${screwLabel(frame.spec, s.units)}`,
+      );
+    }
   }
   return lines.join("\n");
 }

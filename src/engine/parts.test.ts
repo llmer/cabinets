@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, makeCabinet } from "@/domain/defaults";
 import { Part, Settings } from "@/domain/types";
-import { drawerBoxSpecs, genParts } from "./parts";
+import { drawerBoxSpecs, genParts, slideBlockingSpecs } from "./parts";
 import { drawerStackBudget } from "./drawers";
 
 const S: Settings = DEFAULT_SETTINGS;
@@ -318,5 +318,81 @@ describe("genParts — open boxes", () => {
     const c = makeCabinet("base", "D", { frontStyle: "desk", drawerCount: 1, toeKick: false });
     const { parts } = genParts(c, noBoxes);
     expect(find(parts, "Drawer deck")).toBeUndefined();
+  });
+});
+
+describe("slideBlockingSpecs — slide pack-out for framed drawer bays", () => {
+  // 18" framed drawer stack: box = 18 - 2×1.5 - 1 = 14" wide, 3/4" ply walls.
+  const framed = makeCabinet("base", "FF", {
+    width: 18,
+    construction: "framed",
+    frontStyle: "drawers",
+    drawerCount: 3,
+  });
+
+  it("solo bay: symmetric pack-out flush with the full stiles", () => {
+    const bl = slideBlockingSpecs(framed, S);
+    expect(bl.map((b) => b.side)).toEqual(["left", "right"]);
+    // box centred: slide planes at the stile edges, 1/2" off each box side
+    expect(bl[0].plane).toBe(1.5);
+    expect(bl[1].plane).toBe(16.5);
+    // stile 1.5 − wall 0.75 = 3/4" pack-out, one ply strip each
+    expect(bl[0].thickness).toBe(0.75);
+    expect(bl[1].thickness).toBe(0.75);
+    expect(bl.every((b) => b.layers === 1)).toBe(true);
+    // strips run with the slide: box depth long × 4" wide
+    expect(bl[0].length).toBe(22); // floor(24 − 0.25 back − 1)
+    expect(bl[0].width).toBe(4);
+  });
+
+  it("run end bay: thick strip at the full end stile, thin at the shared half-stile joint", () => {
+    // B3-style right end: 3/4" half-stile on the left, 1 1/2" end stile on the right.
+    const bl = slideBlockingSpecs(framed, S, {
+      emitFaceFrame: false,
+      leftEnd: false,
+      rightEnd: true,
+    });
+    // opening 0.75→16.5 centred at 8.625; box 14 → planes 1.125 / 16.125
+    expect(bl[0].plane).toBe(1.125);
+    expect(bl[0].thickness).toBe(0.375); // 1.125 − 0.75 wall
+    expect(bl[1].plane).toBe(16.125);
+    expect(bl[1].thickness).toBe(1.125); // 18 − 0.75 wall − 16.125
+    expect(bl[0].layers).toBe(1);
+    expect(bl[1].layers).toBe(2); // more than one ply thickness → laminate two
+  });
+
+  it("a shared partition halves the wall in this bay and the strip thickens to meet it", () => {
+    const bl = slideBlockingSpecs(framed, S, {
+      emitFaceFrame: false,
+      leftEnd: false,
+      rightEnd: true,
+      shareLeft: true,
+    });
+    expect(bl[0].thickness).toBe(0.75); // 1.125 − half a 3/4" partition
+  });
+
+  it("frameless boxes need no pack-out — slides mount straight to the carcass", () => {
+    const fl = makeCabinet("base", "FL", { width: 18, frontStyle: "drawers", drawerCount: 3 });
+    expect(slideBlockingSpecs(fl, S)).toEqual([]);
+  });
+
+  it("the cut list carries the strips (per drawer, per side, per layer) and the geometry carries the specs", () => {
+    const { parts, geometry } = genParts(framed, S);
+    const strip = find(parts, "Slide blocking strip")!;
+    expect(strip.qty).toBe(6); // 3 drawers × (1 left + 1 right layer)
+    expect(strip.length).toBe(22);
+    expect(strip.width).toBe(4);
+    expect(strip.role).toBe("carcass");
+    expect(geometry.slideBlocking).toHaveLength(2);
+    // a run-end bay laminates the end side: 3 × (1 + 2) = 9 strips
+    const runEnd = genParts(framed, S, { emitFaceFrame: false, leftEnd: false, rightEnd: true });
+    expect(find(runEnd.parts, "Slide blocking strip")!.qty).toBe(9);
+    // suppressed with the drawer boxes; absent on doors-only and frameless boxes
+    expect(find(genParts(framed, noBoxes).parts, "Slide blocking strip")).toBeUndefined();
+    const doors = makeCabinet("base", "D", { construction: "framed", frontStyle: "doors", doorCount: 2 });
+    expect(find(genParts(doors, S).parts, "Slide blocking strip")).toBeUndefined();
+    const fl = makeCabinet("base", "FL", { width: 18, frontStyle: "drawers", drawerCount: 3 });
+    expect(find(genParts(fl, S).parts, "Slide blocking strip")).toBeUndefined();
+    expect(genParts(fl, S).geometry.slideBlocking).toEqual([]);
   });
 });

@@ -98,6 +98,76 @@ export function genRunFrameParts(run: Run, s: Settings): Part[] {
 }
 
 /**
+ * The pocket-hole joints in a run's ladder frame, derived from the SAME
+ * stile/span logic as genRunFrameParts so the build guide and the screw
+ * counts can never drift from the geometry. Each count is member ENDS that
+ * get pockets (2 pockets/screws per end):
+ * - every stile joins the continuous top rail (top end);
+ * - a stile whose foot RESTS on a bottom rail joins it (bottom end) — a
+ *   floor-running stile beside an open bay joins only at the top;
+ * - a bottom-rail end that BUTTS a full-height stile mid-run (not a run end,
+ *   where it reaches the frame edge under the end stile) gets pockets;
+ * - every mid rail joins a stile at both ends.
+ */
+export interface RunFrameJoints {
+  stileTopEnds: number;
+  stileBottomEnds: number;
+  railButtEnds: number;
+  midRailEnds: number;
+}
+
+export function runFrameJoints(run: Run, s: Settings): RunFrameJoints {
+  const ff = s.frameWidth || 1.5;
+  const ms = run.members;
+  if (!run.framed) return { stileTopEnds: 0, stileBottomEnds: 0, railButtEnds: 0, midRailEnds: 0 };
+
+  const sideFoot = (m: RunMember): number =>
+    isOpenBox(m.cabinet) ? m.frameBottom : r3(m.yB + ff);
+  let stileBottomEnds = 0;
+  for (let i = 0; i <= ms.length; i++) {
+    const near = [ms[i - 1], ms[i]].filter((m): m is RunMember => !!m);
+    const closed = near.filter((m) => !isOpenBox(m.cabinet));
+    if (closed.length === 0) continue; // floor-running beside open bays only
+    const foot = Math.min(...near.map(sideFoot));
+    // The stile rests on a rail only when the LOWEST foot is a rail top — an
+    // open neighbour with a lower frame bottom sends it past the rail to the floor.
+    if (closed.some((m) => sideFoot(m) === foot)) stileBottomEnds++;
+  }
+
+  // A rail end butts the stile only when the stile passes DOWN past this
+  // rail's top — beside an open bay (floor-running stile), or beside a closed
+  // span whose own rail sits lower (the stile rests on THAT one; this rail
+  // stops against its side). The lower rail's end runs under the resting
+  // stile and needs no pockets; at a run end the rail reaches the frame edge.
+  const butts = (neighbor: RunMember | undefined, self: RunMember): boolean =>
+    !!neighbor && sideFoot(neighbor) < sideFoot(self);
+  let railButtEnds = 0;
+  for (const seg of bottomRailSegments(ms)) {
+    const fi = ms.indexOf(seg[0]);
+    const li = ms.indexOf(seg[seg.length - 1]);
+    if (!seg[0].leftEnd && butts(ms[fi - 1], seg[0])) railButtEnds++;
+    if (!seg[seg.length - 1].rightEnd && butts(ms[li + 1], seg[seg.length - 1])) railButtEnds++;
+  }
+
+  let midRailEnds = 0;
+  for (const m of ms) {
+    const c = m.cabinet;
+    if (!isInset(c)) continue;
+    const mid =
+      c.frontStyle === "drawers"
+        ? c.drawerCount - 1
+        : c.frontStyle === "desk"
+          ? c.drawerCount
+          : c.frontStyle === "door_drawer"
+            ? 1
+            : 0;
+    midRailEnds += 2 * Math.max(0, mid);
+  }
+
+  return { stileTopEnds: ms.length + 1, stileBottomEnds, railButtEnds, midRailEnds };
+}
+
+/**
  * Contiguous spans of closed bays that share a box + frame bottom — one
  * continuous bottom rail each. Open bays break a span (they carry no bottom
  * rail), and a change in box/frame bottom (a floor-standing bay beside a

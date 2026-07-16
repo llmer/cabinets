@@ -1,7 +1,7 @@
 import { color, font } from "@/theme";
 import { constructionInfo } from "@/engine/labels";
 import { fmtLen, toFrac } from "@/engine/units";
-import { LinearPack, StockPack, ripPlanText } from "@/engine/packing";
+import { BoardPack, LinearPack, StockPack, ripPlanText } from "@/engine/packing";
 import { useModel } from "@/state/useModel";
 import { useStore } from "@/state/store";
 import { sheetsCsv } from "@/state/exporters";
@@ -167,13 +167,134 @@ function LinearBoardPack({ pack, units }: { pack: LinearPack; units: "in" | "mm"
   );
 }
 
+/**
+ * Rip-aware hardwood plan — the boards actually on hand, each drawn to scale
+ * with its crosscut segments (dashed lines) and the rip strips inside them.
+ * Exported for the render smoke test (the SSR snapshot can't carry a stock
+ * with boards, so the test renders this pure component directly).
+ */
+export function BoardPlanPack({ pack, units, kerf }: { pack: BoardPack; units: "in" | "mm"; kerf: number }) {
+  const maxLen = Math.max(...pack.boards.map((b) => b.length), 1);
+  const sc = 430 / maxLen; // px per inch along the board
+  // Area-based yield: parts on parallel rip strips sum past a board's LENGTH,
+  // so length-based yield could read over 100%.
+  const usedArea = pack.boards.reduce(
+    (a, b) =>
+      a +
+      b.segments.reduce(
+        (c, seg) =>
+          c +
+          seg.strips.reduce(
+            (d, st) => d + st.cuts.reduce((e, x) => e + x.length, 0) * seg.ripWidth,
+            0,
+          ),
+        0,
+      ),
+    0,
+  );
+  const capacity = pack.boards.reduce((a, b) => a + b.length * b.width, 0);
+  const packYield = capacity ? Math.round((usedArea / capacity) * 100) : 0;
+  const onHand = pack.specs
+    .map((sp) => `${sp.qty}× ${fmtLen(sp.width, units)} × ${fmtLen(sp.length, units)}`)
+    .join(" · ");
+  return (
+    <div style={{ marginBottom: 30 }}>
+      <div style={{ fontFamily: font.mono, fontSize: 12, color: color.inkMuted, marginBottom: 12, letterSpacing: ".04em" }}>
+        {pack.label} · <strong style={{ color: color.hardwood }}>boards on hand: {onHand}</strong> · uses{" "}
+        {pack.boards.length} board{pack.boards.length === 1 ? "" : "s"} · {packYield}% yield
+      </div>
+      {(pack.shortfall.length > 0 || pack.oversize.length > 0) && (
+        <div style={{ fontFamily: font.mono, fontSize: 12, color: color.danger, border: `1px solid ${color.danger}`, background: color.panel, borderRadius: 6, padding: "10px 14px", marginBottom: 14 }}>
+          {pack.oversize.map((it, i) => (
+            <div key={`ov${i}`}>
+              ⚠ {it.part} ({fmtLen(it.length, units)} × {fmtLen(it.width, units)}) is bigger than every board on hand.
+            </div>
+          ))}
+          {pack.shortfall.map((it, i) => (
+            <div key={`sh${i}`}>
+              ⚠ {it.part} ({fmtLen(it.length, units)} × {fmtLen(it.width, units)}) doesn&apos;t fit — the boards ran out.
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {pack.boards.map((b, i) => {
+          const Hpx = Math.max(22, b.width * 12); // board width, to scale-ish
+          return (
+            <div key={i}>
+              <div style={{ fontFamily: font.mono, fontSize: 11, letterSpacing: ".06em", color: color.inkMuted, marginBottom: 6 }}>
+                Board {i + 1} / {pack.boards.length} · {fmtLen(b.width, units)} × {fmtLen(b.length, units)} · drop{" "}
+                {fmtLen(Math.max(0, b.length - b.used), units)}
+              </div>
+              <div style={{ position: "relative", width: b.length * sc, height: Hpx, background: color.panel, border: `1px solid ${color.inkStrong}`, borderRadius: 3, boxShadow: "0 1px 2px rgba(31,20,14,.06)" }}>
+                {b.segments.map((seg, si) => (
+                  <div key={si}>
+                    {seg.strips.map((st, ri) => {
+                      const top = (ri * (seg.ripWidth + kerf) * Hpx) / b.width;
+                      const h = (seg.ripWidth * Hpx) / b.width;
+                      return st.cuts.map((c, ci) => (
+                        <div
+                          key={`${si}-${ri}-${ci}`}
+                          title={`${c.label} · ${c.part} · ${toFrac(c.length)} × ${toFrac(seg.ripWidth)}`}
+                          style={{
+                            position: "absolute",
+                            left: (seg.offset + c.offset) * sc,
+                            top,
+                            width: Math.max(1, c.length * sc - 1),
+                            height: Math.max(1, h - 1),
+                            background: c.color + "40",
+                            border: `1px solid ${c.color}`,
+                            borderRadius: 1,
+                            overflow: "hidden",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {c.length * sc > 34 ? (
+                            <span style={{ fontFamily: font.mono, fontSize: 9, color: color.inkStrong }}>{fmtLen(c.length, units)}</span>
+                          ) : null}
+                        </div>
+                      ));
+                    })}
+                    <div
+                      title={`crosscut · segment of ${toFrac(seg.length)} ripped at ${toFrac(seg.ripWidth)}`}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        bottom: 0,
+                        left: Math.max(0, (seg.offset + seg.length) * sc - 1),
+                        borderLeft: `2px dashed ${color.danger}`,
+                        pointerEvents: "none",
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontFamily: font.mono, fontSize: 10, color: color.inkMuted, marginTop: 5 }}>
+                ✂{" "}
+                {b.segments
+                  .map(
+                    (seg) =>
+                      `${fmtLen(seg.length, units)} @ rip ${seg.strips.length}× ${fmtLen(seg.ripWidth, units)}`,
+                  )
+                  .join(" → ")}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function SheetsView() {
   const model = useModel();
   const settings = useStore((s) => s.project.settings);
   const cabinets = useStore((s) => s.project.cabinets);
   const projectName = useStore((s) => s.project.name);
   const updateSettings = useStore((s) => s.updateSettings);
-  const { summary, packs, linearPacks, legend } = model;
+  const { summary, packs, linearPacks, boardPacks, legend } = model;
   const ci = constructionInfo(cabinets);
   const u = settings.units;
 
@@ -237,7 +358,14 @@ export function SheetsView() {
 
       {summary.oversize > 0 && (
         <div style={{ fontFamily: font.mono, fontSize: 12, color: color.danger, border: `1px solid ${color.danger}`, background: color.panel, borderRadius: 6, padding: "10px 14px", marginBottom: 18 }}>
-          ⚠ {summary.oversize} part(s) won&apos;t fit a single sheet — split them or order a larger panel.
+          ⚠ {summary.oversize} part(s) won&apos;t fit the stock — split them, or use a larger sheet/board.
+        </div>
+      )}
+
+      {summary.boardShort > 0 && (
+        <div style={{ fontFamily: font.mono, fontSize: 12, color: color.danger, border: `1px solid ${color.danger}`, background: color.panel, borderRadius: 6, padding: "10px 14px", marginBottom: 18 }}>
+          ⚠ {summary.boardShort} hardwood part(s) don&apos;t fit the boards on hand — buy another board
+          (details in the board plan below).
         </div>
       )}
 
@@ -256,6 +384,21 @@ export function SheetsView() {
         </div>
       ) : (
         packs.map((pack) => <SheetPack key={pack.stockId} pack={pack} units={u} kerf={settings.kerf} rot={settings.allowRotate} />)
+      )}
+
+      {boardPacks.length > 0 && (
+        <>
+          <div style={{ marginTop: 10, marginBottom: 12, borderTop: `1px solid ${color.divider}`, paddingTop: 20 }}>
+            <MonoLabel>Hardwood cut plan · ripped from the boards on hand</MonoLabel>
+          </div>
+          <div style={{ fontFamily: font.mono, fontSize: 13, color: color.inkMuted, marginBottom: 20 }}>
+            Crosscut each dashed segment off the board, rip it into the strips shown, then cut the
+            parts to length from the strips.
+          </div>
+          {boardPacks.map((pack) => (
+            <BoardPlanPack key={pack.stockId} pack={pack} units={u} kerf={settings.kerf} />
+          ))}
+        </>
       )}
 
       {linearPacks.some((p) => p.boards.length) && (

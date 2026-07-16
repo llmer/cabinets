@@ -102,6 +102,27 @@ export function auditProject(cabinets: Cabinet[], s: Settings, model?: Model): A
     }
   }
 
+  // Hardwood boards on hand — parts the declared boards can't produce.
+  for (const bp of m.boardPacks) {
+    for (const r of bp.oversize) {
+      push({
+        level: "error",
+        code: "board_oversize",
+        message: `"${r.part}" for ${r.label} needs ${inch(r.length)} × ${inch(r.width)} and no ${bp.label} board on hand is that big.`,
+        fix: "Add a longer/wider board to the stock's board list, or shrink the part.",
+      });
+    }
+    if (bp.shortfall.length > 0) {
+      const lf = Math.ceil(bp.shortfall.reduce((a, x) => a + x.length, 0) / 12);
+      push({
+        level: "warn",
+        code: "board_shortfall",
+        message: `${bp.label}: ${bp.shortfall.length} part(s) (~${lf} lf) don't fit the boards on hand — the boards run out.`,
+        fix: "Buy another board and add it in Settings → Materials (or via update_stock boards).",
+      });
+    }
+  }
+
   // Sheet yield — informational nudge when a lot of material is offcut.
   if (m.summary.sheetCount >= 1 && m.summary.yieldPct > 0 && m.summary.yieldPct < LOW_YIELD_PCT) {
     push({
