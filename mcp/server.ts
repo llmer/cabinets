@@ -690,7 +690,8 @@ server.registerTool(
       const c = session.resolve(cabinet);
       if (!c) return fail(`No cabinet "${cabinet}". Try list_cabinets.`);
       // The drawer step references "the table below" — provide it for one cabinet.
-      const table = drawerBoxTable(c, session.settings);
+      const cp = model.cabinetParts.find((x) => x.cabinet.id === c.id);
+      const table = drawerBoxTable(cp?.geometry.drawerBoxes ?? [], session.settings);
       return text(stepsText(model, c.id) + (table ? `\n\n${table}` : ""));
     }
     return text(stepsText(model));

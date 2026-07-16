@@ -6,14 +6,13 @@
  * (model | project | report) → string. Lengths render in the project's active
  * unit via the engine's `fmtLen`, so a mm project reads in mm.
  */
-import { Cabinet, Project, Settings } from "@/domain/types";
+import { Cabinet, DrawerBoxSpec, Project, Settings } from "@/domain/types";
 import { AuditReport } from "@/engine/audit";
 import { Model } from "@/engine/compute";
 import { cabinetGeometry } from "@/engine/geometry";
 import { constructionInfo, frontStyleLabel, typeLabel } from "@/engine/labels";
 import { ripPlanText } from "@/engine/packing";
 import { pocketRow, screwLabel } from "@/engine/pocketHoles";
-import { drawerBoxSpecs } from "@/engine/parts";
 import { runsOf } from "@/engine/runs";
 import { fmtLen } from "@/engine/units";
 
@@ -97,8 +96,10 @@ export function cabinetTable(project: Project): string {
 /** Everything about one cabinet: fields, derived geometry, part + step counts. */
 export function cabinetDetail(c: Cabinet, project: Project, model: Model): string {
   const s = project.settings;
-  const g = cabinetGeometry(c, s);
   const cp = model.cabinetParts.find((x) => x.cabinet.id === c.id);
+  // Prefer the computed geometry — it carries the run-aware drawer boxes and
+  // pack-out; the bare `cabinetGeometry` is a solo fallback.
+  const g = cp?.geometry ?? cabinetGeometry(c, s);
   const steps = model.stepGroups.find((x) => x.id === c.id);
   const pieces = cp ? cp.parts.reduce((a, p) => a + p.qty, 0) : 0;
   const lines: string[] = [];
@@ -111,14 +112,17 @@ export function cabinetDetail(c: Cabinet, project: Project, model: Model): strin
   lines.push("");
   lines.push(`Derived:   box ${L(g.boxHeight, s)} h · interior ${L(g.interiorWidth, s)} w · carcass depth ${L(g.carcassDepth, s)}`);
   lines.push(`Cut list:  ${pieces} pieces in ${cp?.parts.length ?? 0} distinct parts · ${steps?.steps.length ?? 0} assembly steps`);
-  const boxes = drawerBoxTable(c, s);
+  const boxes = drawerBoxTable(g.drawerBoxes, s);
   if (boxes) lines.push("", boxes);
   return lines.join("\n");
 }
 
-/** Per-drawer box sizes — the table the drawer build step refers to. "" if none. */
-export function drawerBoxTable(c: Cabinet, s: Settings): string {
-  const specs = drawerBoxSpecs(c, s);
+/**
+ * Per-drawer box sizes — the table the drawer build step refers to. "" if none.
+ * Takes the specs off `CabinetParts.geometry` (run-aware) rather than
+ * re-deriving them, so a bay at a shared joint reports its true box width.
+ */
+export function drawerBoxTable(specs: DrawerBoxSpec[], s: Settings): string {
   if (specs.length === 0) return "";
   const lines = ["Drawer boxes (outside W × D × H · bottom W × L):"];
   for (const sp of specs) {

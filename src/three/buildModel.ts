@@ -1,4 +1,4 @@
-import { Cabinet, Settings, SlideBlockingSpec } from "@/domain/types";
+import { Cabinet, DrawerBoxSpec, Settings, SlideBlockingSpec } from "@/domain/types";
 import { BuildStage } from "@/engine/steps";
 import {
   backThickness,
@@ -107,6 +107,11 @@ export function cabinetBuildParts(
    * standalone box, wrong at a run joint, so run bays must pass theirs in.
    */
   blocking?: SlideBlockingSpec[],
+  /**
+   * Run-aware drawer boxes from `CabinetParts.geometry.drawerBoxes`. Omitted =
+   * solo-cabinet boxes (full stiles both sides), same rule as `blocking`.
+   */
+  boxes?: DrawerBoxSpec[],
 ): BuildPart[] {
   const out: BuildPart[] = [];
   const push = (
@@ -178,13 +183,17 @@ export function cabinetBuildParts(
   const endR = ends?.right ?? true;
 
   /* ---------- carcass ---------- */
-  // side panels — cut, drilled and edge-banded at the `sides` stage. They run the
-  // FULL depth (0..D) so the front sits at the front plane (flush with the front
-  // stretcher + face frame) and the rear stays flush with the inset applied back.
-  // On a framed toe-kicked box an EXPOSED end drops to the frame line; a side
-  // shared with a neighbouring bay stays at box height.
-  push("sides", "carcass", 0, matT, endL ? frameBottom : yB, yT, 0, D);
-  push("sides", "carcass", x1 - matT, x1, endR ? frameBottom : yB, yT, 0, D);
+  // Rear plane of the CARCASS. The back is APPLIED — screwed on over the rear
+  // edges at z 0..backT — so every box part stops one back-thickness shy of the
+  // wall and the assembly still measures D deep. Matches `carcassDepth`.
+  const cz0 = openBox ? 0 : backT;
+  // side panels — cut, drilled and edge-banded at the `sides` stage. They run
+  // cz0..D: the front sits at the front plane (flush with the front stretcher +
+  // face frame), the rear takes the applied back over its edge. On a framed
+  // toe-kicked box an EXPOSED end drops to the frame line; a side shared with a
+  // neighbouring bay stays at box height.
+  push("sides", "carcass", 0, matT, endL ? frameBottom : yB, yT, cz0, D);
+  push("sides", "carcass", x1 - matT, x1, endR ? frameBottom : yB, yT, cz0, D);
   // bottom (closed boxes only) — pockets in the NON-sanded face: the underside,
   // EXCEPT a wall cabinet whose underside shows from below (they flip inside).
   if (!openBox)
@@ -195,28 +204,28 @@ export function cabinetBuildParts(
       x1 - matT,
       yB,
       yB + matT,
-      0,
+      cz0,
       D,
       xEndDots(
         phBox,
         matT,
         x1 - matT,
-        pocketsPerEnd(D),
+        pocketsPerEnd(D - cz0),
         c.type === "wall" ? { y: [yB + matT, 1] } : { y: [yB, -1] },
-        0,
+        cz0,
         D,
       ),
     );
   // top: base/desk get two stretchers (front + back), others a full top —
   // pockets face up (hidden under the counter / above the cabinet).
   if (c.type === "base") {
-    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, 4,
-      xEndDots(phBox, matT, x1 - matT, 2, { y: [yT, 1] }, 0, 4));
+    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, cz0, cz0 + 4,
+      xEndDots(phBox, matT, x1 - matT, 2, { y: [yT, 1] }, cz0, cz0 + 4));
     push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, D - 4, D,
       xEndDots(phBox, matT, x1 - matT, 2, { y: [yT, 1] }, D - 4, D));
   } else {
-    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, 0, D,
-      xEndDots(phBox, matT, x1 - matT, pocketsPerEnd(D), { y: [yT, 1] }, 0, D));
+    push("carcass", "carcass", matT, x1 - matT, yT - matT, yT, cz0, D,
+      xEndDots(phBox, matT, x1 - matT, pocketsPerEnd(D - cz0), { y: [yT, 1] }, cz0, D));
   }
   // Open box (appliance opening / desk knee): a pair of back stretchers on edge
   // (at the back, z≈0) stiffen the open surround — one under the top rear
@@ -228,9 +237,10 @@ export function cabinetBuildParts(
     push("carcass", "carcass", matT, x1 - matT, yB, yB + 4, 0, matT,
       xEndDots(phBox, matT, x1 - matT, 2, { z: [0, -1] }, yB, yB + 4));
   }
-  // applied back — squares the closed box, captured inset at the rear with its
-  // top tucked just UNDER the top back stretcher (which owns the top-rear corner).
-  if (!openBox) push("back", "back", matT, x1 - matT, yB, yT - matT + 0.06, 0, backT);
+  // applied back — the FULL box face (W × boxH) screwed on OVER the assembled
+  // carcass at the `back` stage, so its edges show from the side. This is what
+  // squares the box, and it matches the cut list's "Back (applied)".
+  if (!openBox) push("back", "back", 0, W, yB, yT, 0, backT);
   // desk writing surface, capping the open box (not a nested cut-list part)
   if (desk) push("desktop", "carcass", 0, W, yT, yT + matT, 0, D);
   // Separate toe-kick base: recessed from the front, and (with a separate base)
@@ -245,12 +255,13 @@ export function cabinetBuildParts(
   if (!openBox && c.shelves > 0) {
     for (let i = 1; i <= c.shelves; i++) {
       const sy = yB + matT + ((boxH - 2 * matT) * i) / (c.shelves + 1);
-      push("shelves", "shelf", matT, x1 - matT, sy, sy + 0.75, backT, D - 1);
+      // cz0..D-1: off the applied back's inner face, 1" shy of the front
+      push("shelves", "shelf", matT, x1 - matT, sy, sy + 0.75, cz0, D - 1);
     }
   }
 
   /* ---------- drawer boxes (interior; shown in cutaway) ---------- */
-  addDrawerBoxes(out, c, s, yT, blocking ?? slideBlockingSpecs(c, s));
+  addDrawerBoxes(out, c, s, yT, blocking ?? slideBlockingSpecs(c, s), boxes ?? drawerBoxSpecs(c, s));
 
   /* ---------- fronts + face frame ---------- */
   const fz0 = D - FRONT_T;
@@ -426,11 +437,11 @@ function addDrawerBoxes(
   s: Settings,
   yT: number,
   blocking: SlideBlockingSpec[],
+  specs: DrawerBoxSpec[],
 ): void {
   const hasDrawers =
     c.frontStyle === "drawers" || c.frontStyle === "desk" || c.frontStyle === "door_drawer";
   if (!hasDrawers) return;
-  const specs = drawerBoxSpecs(c, s);
   if (!specs.length) return;
   const dt = s.stocks[s.roleStock.drawerBox].thickness;
   const bt = s.stocks[s.roleStock.drawerBottom].thickness;
@@ -440,7 +451,6 @@ function addDrawerBoxes(
   const slotTop = inset ? topBorderWidth(c, s) : 0.125;
   const railGap = inset ? insetStackGap(c, s) : 0.125;
   const heights = getDrawerHeights(c, s);
-  const W = c.width;
   const fz0 = c.depth - FRONT_T;
   const push = (
     x0: number,
@@ -469,15 +479,16 @@ function addDrawerBoxes(
     }
     return dots;
   };
-  // The box hangs centred under its FRONT (between the slide planes), which in
-  // a run bay is shifted off the carcass centre by the asymmetric stiles.
-  const packL = blocking.find((b) => b.side === "left");
   let top = yT - slotTop;
   heights.forEach((dh, i) => {
     const sp = specs[i];
     if (!sp) return;
     const slotBottom = top - dh;
-    const bx0 = packL ? packL.plane + 0.5 : W / 2 - sp.boxWidth / 2;
+    // Position comes off the spec — it hangs under the OPENING, which in a run
+    // bay is off the carcass centre. (Deriving it from `blocking` instead would
+    // lose the plane on any side whose pack-out is zero and drop the box back
+    // to centre.)
+    const bx0 = sp.boxLeft;
     const bx1 = bx0 + sp.boxWidth;
     const bz1 = fz0 - 0.25;
     const bz0 = Math.max(0.75, bz1 - sp.boxDepth);

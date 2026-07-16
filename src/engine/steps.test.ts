@@ -241,18 +241,20 @@ describe("genSteps — slide pack-out narration", () => {
   it("quotes the symmetric pack-out and strip size on a solo framed bay", () => {
     const { steps } = genSteps(genParts(framed, S), S, "#000");
     const slide = steps.find((st) => st.t.startsWith("Mount the drawer slides"))!;
-    expect(slide.t).toContain('pack each wall out to the slide line with the 22" × 4" blocking strips');
+    expect(slide.t).toContain('pack the wall out to the slide line with the 22" × 4" blocking strips');
     expect(slide.t).toContain('3/4" proud on each side');
     expect(slide.t).toContain('shim until the slide faces sit exactly 1/2" off the box');
   });
 
-  it("quotes the asymmetric per-side pack-out for a run-end bay", () => {
+  it("packs out the END side only on a run-end bay — the half-stile joint is flush", () => {
     const cp = genParts(framed, S, { emitFaceFrame: false, leftEnd: false, rightEnd: true });
     const { steps } = genSteps(cp, S, "#000");
     const slide = steps.find((st) => st.t.startsWith("Mount the drawer slides"))!;
-    expect(slide.t).toContain('3/8" proud on the LEFT');
-    expect(slide.t).toContain('1 1/8" (2 strips) on the RIGHT');
-    expect(slide.t).toContain("centred under its front, not in the carcass");
+    expect(slide.t).toContain('3/4" proud on the RIGHT ONLY');
+    expect(slide.t).toContain("the other side's stile already sits flush with the carcass wall");
+    // and it quotes the RUN opening's box (14 3/4"), not the narrower solo one
+    const cut = steps.find((st) => st.t.startsWith("Cut the parts for"))!;
+    expect(cut.t).toContain('14 3/4" wide');
   });
 
   it("keeps the frameless slide step free of pack-out talk", () => {

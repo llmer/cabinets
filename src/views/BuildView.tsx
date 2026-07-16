@@ -1,8 +1,7 @@
 import { CSSProperties, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { color, font } from "@/theme";
-import { Cabinet, Settings, SlideBlockingSpec, Units } from "@/domain/types";
+import { Cabinet, DrawerBoxSpec, Settings, SlideBlockingSpec, Units } from "@/domain/types";
 import { constructionInfo } from "@/engine/labels";
-import { drawerBoxSpecs } from "@/engine/parts";
 import { fmtLen } from "@/engine/units";
 import { BuildStage, Step, StepGroup } from "@/engine/steps";
 import { useModel } from "@/state/useModel";
@@ -30,7 +29,7 @@ const STAGE_LABEL: Record<BuildStage, string> = {
   pulls: "Pulls & knobs",
 };
 
-type DrawerSpec = ReturnType<typeof drawerBoxSpecs>[number];
+type DrawerSpec = DrawerBoxSpec;
 
 /** One assembly step flattened into a single linear walkthrough sequence. */
 interface FlatStep {
@@ -85,7 +84,9 @@ export function BuildView() {
     const out: FlatStep[] = [];
     stepGroups.forEach((sg, gi) => {
       const cp = cabinetParts.find((c) => c.cabinet.id === sg.id);
-      const specs = cp ? drawerBoxSpecs(cp.cabinet, settings) : [];
+      // Boxes and pack-out both come off the cut-list geometry — run-aware, and
+      // never re-derived here (a solo re-derive sizes joint bays too narrow).
+      const specs = cp?.geometry.drawerBoxes ?? [];
       const framed = cp?.geometry.framed ?? false;
       const cabinet = cp?.cabinet;
       // Exposed run ends drop to the frame line in the 3D; a shared side stays
@@ -548,6 +549,7 @@ function GuidedWalkthrough({
                 cabinet={cur.cabinet}
                 ends={cur.ends}
                 blocking={cur.blocking}
+                boxes={cur.specs}
                 runCabinets={cur.runCabinets}
                 runFrameOn={cur.runFrameOn}
                 settings={settings}
