@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "cabinets": {
+      "command": "npx",
+      "args": ["tsx", "mcp/server.ts"],
+      "env": {
+        "CABINETS_LIVE_FILE": "live.cabinets.json"
+      }
+    }
+  }
+}

@@ -7,6 +7,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LayoutView } from "@/views/LayoutView";
 import { CutListView } from "@/views/CutListView";
 import { SheetsView } from "@/views/SheetsView";
+import { PocketsView } from "@/views/PocketsView";
 import { BuildView } from "@/views/BuildView";
 import { SettingsView } from "@/views/SettingsView";
 
@@ -81,6 +82,7 @@ export function App() {
           {view === "layout" && <LayoutView />}
           {view === "cutlist" && <CutListView />}
           {view === "sheets" && <SheetsView />}
+          {view === "pockets" && <PocketsView />}
           {view === "build" && <BuildView />}
           {view === "3d" && (
             <Suspense

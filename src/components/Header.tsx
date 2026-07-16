@@ -83,6 +83,7 @@ export function Header() {
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const setToast = useStore((s) => s.setToast);
+  const live = useStore((s) => s.live);
   const fileRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -163,6 +164,28 @@ export function Header() {
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        {live && (
+          <div
+            title="The browser is following an agent's live MCP edits — changes you make here may be overwritten by the next update."
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 11px",
+              borderRadius: 6,
+              border: `1px solid ${color.rust}`,
+              background: color.page,
+              fontFamily: font.mono,
+              fontSize: 11,
+              letterSpacing: "0.08em",
+              color: color.rust,
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: color.rust, display: "inline-block" }} />
+            LIVE · following agent
+          </div>
+        )}
         <Chip label="Base run" value={summary.baseRun} />
         <Chip label="Sheets" value={String(summary.sheetCount)} sub={summary.yieldStr} />
         <Chip label="Est. material" value={summary.cost} valueColor={color.rust} />

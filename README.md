@@ -27,9 +27,32 @@ npm run build      # type-check + production bundle to dist/
 npm run preview    # serve the production build
 npm run test       # run the engine + render test suite (vitest)
 npm run typecheck  # tsc --noEmit
+npm run mcp        # start the MCP server (stdio) — see "AI agents" below
+npm run mcp:smoke  # drive the MCP server end-to-end and assert
 ```
 
 Requires Node 18+ (developed on Node 24).
+
+## AI agents (MCP server)
+
+frame(less) ships an **[MCP](https://modelcontextprotocol.io) server** so an AI
+agent can drive the tool directly — designing a kitchen, auditing a design, and
+walking a build — using the *same* engine and mutation rules as the app. It's
+registered for this repo in [`.mcp.json`](.mcp.json); open the repo in an
+MCP-capable client (Claude Code, Claude Desktop, Cursor) and enable the
+**cabinets** server, or run `npm run mcp` and point your own client at stdio.
+
+It exposes ~27 tools across four jobs — **design** (`add_cabinet`,
+`update_cabinet`, `set_run_break`, `apply_to_all`), **audit** (`audit_project`,
+`project_summary`), **build** (`get_cut_list`, `get_sheets`, `get_build_steps`,
+`get_shopping_list`), and **explain** (`explain`, `list_materials`) — plus
+`cabinets://` resources and one prompt per persona. Full catalog: [`mcp/README.md`](mcp/README.md).
+
+**Live preview.** Edits **autosave** (no explicit save step), and with `npm run
+dev` running, the agent's changes stream into the browser in real time — layout,
+cut list, sheets and 3D update live, no reload. A dev-only Vite plugin watches
+the project file and pushes it over the HMR socket; the production build is
+untouched.
 
 ## Features
 
@@ -54,7 +77,10 @@ Itemized material + hardware cost estimate. Export to **CSV**, a plain-text
 
 **Sheets** — first-fit-decreasing nesting with saw-kerf accounting and optional
 grain rotation, shown per material. Oversize-part warnings. Export placements to
-CSV.
+CSV. Optional **store breakdown** mode plans the full-length rips a store's
+panel saw (e.g. Home Depot) makes before the sheet leaves the store — strips
+are easier to haul, and every part keeps a configurable trim allowance clear of
+each rough store cut so you re-cut those edges clean with a track saw at home.
 
 **Build** — ordered assembly steps per cabinet (32 mm drilling, joinery, banding,
 hanging, hinges, slides, shelves) plus a consolidated shopping list.
@@ -112,6 +138,11 @@ only when cabinets or settings actually change.
 - Base cabinets use two 4" top stretchers; wall/tall use a full top.
 - Drawer boxes default to 1/2" ply sides with a 1/4" captured bottom, 1" narrower
   than the opening for side-mount slides. Toggle off in Settings.
+- **Framed drawer bays** also list "Slide blocking strip" parts — 4"-wide ply
+  pack-outs that bring each carcass wall flush with the slide line of the frame
+  opening (the box hangs centred under its front, so at a run joint the shared
+  half-stile side takes a thinner strip than an exposed end). The drawer build
+  step quotes the per-side thickness.
 - Hinges per door scale with height (2 / 3 / 4 / 5). One slide pair per drawer;
   one pull per door and drawer (configurable); four pins per adjustable shelf.
 

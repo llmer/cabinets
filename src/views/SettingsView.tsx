@@ -1,5 +1,5 @@
 import { CSSProperties } from "react";
-import { Role, Stock } from "@/domain/types";
+import { LinearBoardSpec, Role, Stock } from "@/domain/types";
 import { color, font } from "@/theme";
 import { parseLen, toDisplayNumber, unitLabel } from "@/engine/units";
 import { DEFAULT_SETTINGS } from "@/domain/defaults";
@@ -22,6 +22,7 @@ const ROLE_LABELS: Record<Role, string> = {
   drawerBox: "Drawer boxes",
   drawerBottom: "Drawer bottoms",
   faceFrame: "Face frames",
+  base: "Toe-kick base & fascia",
 };
 
 function Card({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
@@ -96,6 +97,7 @@ export function SettingsView() {
           {dimField("upperBottom", "Floor → upper", 30, 80)}
           {dimField("counterH", "Counter height", 24, 48)}
           {dimField("frameWidth", "Frame / rail width", 0.75, 3)}
+          {dimField("faceFrameTop", "Frame top rail", 0.75, 4)}
         </div>
       </Card>
 
@@ -117,6 +119,10 @@ export function SettingsView() {
             Generate drawer-box parts
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.pocketHoles} onChange={(e) => updateSettings({ pocketHoles: e.target.checked })} />
+            Pocket-hole joinery in the build guide (jig settings + screws)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
             <input type="checkbox" checked={settings.showGuideLines} onChange={(e) => updateSettings({ showGuideLines: e.target.checked })} />
             Show elevation guide lines
           </label>
@@ -124,6 +130,43 @@ export function SettingsView() {
             <input type="checkbox" checked={settings.allowRotate} onChange={(e) => updateSettings({ allowRotate: e.target.checked })} />
             Allow grain rotation when nesting
           </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.storeBreakdown} onChange={(e) => updateSettings({ storeBreakdown: e.target.checked })} />
+            Plan store rip cuts (panel-saw breakdown)
+          </label>
+          {settings.storeBreakdown && dimField("storeTrim", "Store rip trim", 0, 4)}
+        </div>
+        {settings.storeBreakdown && (
+          <div style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, marginTop: 10 }}>
+            The sheet optimizer plans full-length rips the store&apos;s panel saw makes for you —
+            easier to haul. Store cuts are rough, so every part keeps the trim allowance clear of
+            them for a clean track-saw re-cut at home.
+          </div>
+        )}
+      </Card>
+
+      <Card title="Runs & toe-kick base" sub="how joined cabinets share a face frame and a base">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "center", marginBottom: 16 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.continuousFaceFrame} onChange={(e) => updateSettings({ continuousFaceFrame: e.target.checked })} />
+            Continuous face frame across each run
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.separateBase} onChange={(e) => updateSettings({ separateBase: e.target.checked })} />
+            Separate toe-kick base (ladder + fascia)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, ...labelStyle, cursor: "pointer" }}>
+            <input type="checkbox" checked={settings.sharedPartitions} onChange={(e) => updateSettings({ sharedPartitions: e.target.checked })} />
+            Shared partitions between joined bays
+          </label>
+        </div>
+        <div style={grid3}>
+          {dimField("faceFrameFloorGap", "Frame off floor", 0, 8)}
+          {dimField("toeKickSideRecess", "Toe-kick side recess", 0, 6)}
+        </div>
+        <div style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, marginTop: 10 }}>
+          A run = contiguous joined cabinets of the same height &amp; depth. Mark “start a new run” on a
+          cabinet in its editor to break one at a corner, an appliance gap, or a separate wall.
         </div>
       </Card>
 
@@ -163,6 +206,35 @@ export function SettingsView() {
                 }, true)
               )}
             </div>
+            {stock.kind === "linear" && (
+              <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: `2px solid ${color.border}` }}>
+                <div style={{ fontFamily: font.mono, fontSize: 9, color: color.faint, marginBottom: 5, textTransform: "uppercase", letterSpacing: ".08em" }}>
+                  Boards on hand — part widths are ripped from these (none = buy a board per width)
+                </div>
+                {(stock.boards || []).map((b, i) => (
+                  <div key={`${stock.id}:${i}/${stock.boards!.length}`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 6, maxWidth: 420 }}>
+                    {numCell(toDisplayNumber(b.width, u), `Wid (${unitLabel(u)})`, (raw) => {
+                      const v = parseLen(raw, u);
+                      if (!isNaN(v) && v > 0) updateStock(stock.id, { boards: withBoard(stock.boards!, i, { width: v }) });
+                    })}
+                    {numCell(toDisplayNumber(b.length, u), `Len (${unitLabel(u)})`, (raw) => {
+                      const v = parseLen(raw, u);
+                      if (!isNaN(v) && v > 0) updateStock(stock.id, { boards: withBoard(stock.boards!, i, { length: v }) });
+                    })}
+                    {numCell(b.qty, "Qty", (raw) => {
+                      const v = Math.round(parseFloat(raw));
+                      if (!isNaN(v) && v > 0) updateStock(stock.id, { boards: withBoard(stock.boards!, i, { qty: v }) });
+                    })}
+                    <Button variant="mono" onClick={() => updateStock(stock.id, { boards: stock.boards!.filter((_, j) => j !== i) })}>
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+                <Button variant="mono" onClick={() => updateStock(stock.id, { boards: [...(stock.boards || []), { width: 3.5, length: 96, qty: 1 }] })}>
+                  + board
+                </Button>
+              </div>
+            )}
           </div>
         ))}
         <Divider style={{ margin: "8px 0 16px" }} />
@@ -210,6 +282,10 @@ export function SettingsView() {
       </Button>
     </div>
   );
+}
+
+function withBoard(boards: LinearBoardSpec[], i: number, patch: Partial<LinearBoardSpec>): LinearBoardSpec[] {
+  return boards.map((b, j) => (j === i ? { ...b, ...patch } : b));
 }
 
 function numCell(value: number, label: string, onCommit: (raw: string) => void, money = false) {

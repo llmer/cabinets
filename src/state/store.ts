@@ -1,9 +1,6 @@
 import { create } from "zustand";
-import {
-  defaultCabinet,
-  newProject,
-  nextId,
-} from "@/domain/defaults";
+import { newProject } from "@/domain/defaults";
+import * as ops from "@/domain/ops";
 import {
   Cabinet,
   CabinetType,
@@ -17,7 +14,6 @@ import {
   Stock,
   StockId,
 } from "@/domain/types";
-import { defaultHeights, evenHeights, withDrawerHeight } from "@/engine/drawers";
 import {
   loadBuildProgress,
   loadProject,
@@ -25,7 +21,7 @@ import {
   saveProject,
 } from "./persistence";
 
-export type ViewId = "layout" | "cutlist" | "sheets" | "build" | "3d" | "settings";
+export type ViewId = "layout" | "cutlist" | "sheets" | "pockets" | "build" | "3d" | "settings";
 
 /** Build view shows either the full step list or a focused, one-step walkthrough. */
 export type BuildMode = "overview" | "guided";
@@ -36,7 +32,6 @@ export function stepKey(cabinetId: string, n: number): string {
 }
 
 const HISTORY_LIMIT = 60;
-const BASE_ONLY_FRONTS: FrontStyle[] = ["drawers", "door_drawer", "desk"];
 
 interface AppState {
   project: Project;
@@ -44,11 +39,15 @@ interface AppState {
   selectedId: string | null;
   dragId: string | null;
   showFronts: boolean;
+  /** 3D only: tint each cabinet's fronts its legend colour (off = uniform wood). */
+  tintCabinets: boolean;
   /** Free-form text drafts for number fields (committed on blur/Enter). */
   drafts: Record<string, string>;
   past: Project[];
   future: Project[];
   toast: string | null;
+  /** Dev live sync is active — the browser is following an agent's MCP edits. */
+  live: boolean;
 
   /* build walkthrough (interaction state — never feeds compute) */
   buildMode: BuildMode;
@@ -70,6 +69,7 @@ interface AppState {
   beginDrag: (id: string) => void;
   endDrag: () => void;
   setShowFronts: (v: boolean) => void;
+  setTintCabinets: (v: boolean) => void;
   setDraft: (key: string, value: string) => void;
   clearDraft: (key: string) => void;
   setToast: (msg: string | null) => void;
@@ -84,6 +84,8 @@ interface AppState {
   /* project lifecycle */
   resetProject: () => void;
   loadProjectObj: (p: Project) => void;
+  /** Fold in a project streamed from an external file (dev live sync). */
+  syncProject: (p: Project) => void;
   renameProject: (name: string) => void;
   undo: () => void;
   redo: () => void;
@@ -103,6 +105,7 @@ interface AppState {
   setDrawerHeightAt: (id: string, i: number, value: number) => void;
   setConstructionAll: (mode: Construction) => void;
   setOverlayAll: (mode: Overlay) => void;
+  setRunBreak: (id: string, on: boolean) => void;
 
   /* settings mutations */
   updateSettings: (patch: Partial<Settings>) => void;
@@ -115,7 +118,7 @@ function bandOf(c: Cabinet): "base" | "wall" {
   return c.type === "wall" ? "wall" : "base";
 }
 
-const ALL_VIEWS: ViewId[] = ["layout", "cutlist", "sheets", "build", "3d", "settings"];
+const ALL_VIEWS: ViewId[] = ["layout", "cutlist", "sheets", "pockets", "build", "3d", "settings"];
 
 /** Initial view comes from the URL hash (#cutlist …) so tabs are deep-linkable. */
 function initialView(): ViewId {
@@ -154,8 +157,10 @@ export const useStore = create<AppState>((set, get) => {
     apply({ ...p, cabinets: fn(p.cabinets) }, history);
   }
 
-  function patchCab(id: string, patch: Partial<Cabinet>) {
-    withCabinets((cabs) => cabs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  /** Mutate the settings immutably. */
+  function withSettings(fn: (s: Settings) => Settings) {
+    const p = get().project;
+    apply({ ...p, settings: fn(p.settings) });
   }
 
   const initialProject = loadProject();
@@ -166,10 +171,12 @@ export const useStore = create<AppState>((set, get) => {
     selectedId: null,
     dragId: null,
     showFronts: true,
+    tintCabinets: false,
     drafts: {},
     past: [],
     future: [],
     toast: null,
+    live: false,
 
     buildMode: "overview",
     buildDone: loadBuildProgress(initialProject.id),
@@ -198,6 +205,7 @@ export const useStore = create<AppState>((set, get) => {
     },
     endDrag: () => set({ dragId: null }),
     setShowFronts: (v) => set({ showFronts: v }),
+    setTintCabinets: (v) => set({ tintCabinets: v }),
     setDraft: (key, value) =>
       set((s) => ({ drafts: { ...s.drafts, [key]: value } })),
     clearDraft: (key) =>
@@ -257,6 +265,30 @@ export const useStore = create<AppState>((set, get) => {
         buildMode: "overview",
       });
     },
+    syncProject: (p) => {
+      const s = get();
+      // Ignore a STALE push — e.g. an old live.cabinets.json adopted on browser
+      // connect — that would clobber newer local work. Only apply what's newer.
+      if (p.updatedAt < s.project.updatedAt) return;
+      // Keep the current view + selection where it can, so watching in the 3D tab
+      // doesn't snap back to Layout on every edit.
+      const keepSel = p.cabinets.some((c) => c.id === s.selectedId)
+        ? s.selectedId
+        : p.cabinets[0]?.id ?? null;
+      // In-memory ONLY: deliberately does NOT saveProject(), so the live preview
+      // is ephemeral and a page reload restores the user's OWN localStorage
+      // project rather than an agent's stream. Undo is still pushed for in-session
+      // recovery.
+      set((st) => ({
+        project: p,
+        past: [...st.past, st.project].slice(-HISTORY_LIMIT),
+        future: [],
+        selectedId: keepSel,
+        drafts: {},
+        live: true,
+        toast: "Updated from live file",
+      }));
+    },
     renameProject: (name) => apply({ ...get().project, name }, false),
 
     undo: () =>
@@ -276,36 +308,29 @@ export const useStore = create<AppState>((set, get) => {
         return next;
       }),
 
-    updateCab: (id, patch) => patchCab(id, patch),
+    updateCab: (id, patch) => withCabinets((cabs) => ops.patchCabinet(cabs, id, patch)),
 
     addCab: (type) => {
-      const prefix = type === "wall" ? "W" : type === "tall" ? "T" : "B";
-      const n = get().project.cabinets.filter((c) => c.type === type).length + 1;
-      const cab: Cabinet = { id: nextId(), name: prefix + n, ...defaultCabinet(type) };
-      withCabinets((cabs) => [...cabs, cab]);
-      set({ selectedId: cab.id });
+      const { cabinets, cabinet } = ops.addCabinet(
+        get().project.cabinets,
+        get().project.settings,
+        type,
+      );
+      withCabinets(() => cabinets);
+      set({ selectedId: cabinet.id });
     },
 
     removeCab: (id) => {
-      const remaining = get().project.cabinets.filter((c) => c.id !== id);
+      const remaining = ops.removeCabinet(get().project.cabinets, id);
       withCabinets(() => remaining);
-      if (get().selectedId === id)
-        set({ selectedId: remaining[0]?.id ?? null });
+      if (get().selectedId === id) set({ selectedId: remaining[0]?.id ?? null });
     },
 
     duplicateCab: (id) => {
-      const src = get().project.cabinets.find((c) => c.id === id);
-      if (!src) return;
-      const prefix = src.type === "wall" ? "W" : src.type === "tall" ? "T" : "B";
-      const n = get().project.cabinets.filter((c) => c.type === src.type).length + 1;
-      const copy: Cabinet = { ...src, id: nextId(), name: prefix + n };
-      withCabinets((cabs) => {
-        const i = cabs.findIndex((c) => c.id === id);
-        const arr = cabs.slice();
-        arr.splice(i + 1, 0, copy);
-        return arr;
-      });
-      set({ selectedId: copy.id });
+      const { cabinets, cabinet } = ops.duplicateCabinet(get().project.cabinets, id);
+      if (!cabinet) return;
+      withCabinets(() => cabinets);
+      set({ selectedId: cabinet.id });
     },
 
     reorderBand: (band, orderedIds, history = false) => {
@@ -315,118 +340,41 @@ export const useStore = create<AppState>((set, get) => {
       }, history);
     },
 
-    setCabinetType: (id, type) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      const patch: Partial<Cabinet> = { type };
-      if (type !== "base" && BASE_ONLY_FRONTS.includes(sel.frontStyle))
-        patch.frontStyle = "doors";
-      if (type === "wall" && sel.depth >= 18) patch.depth = 12;
-      if (type === "tall" && sel.height < 60) patch.height = 84;
-      patchCab(id, patch);
-    },
+    setCabinetType: (id, type) => withCabinets((cabs) => ops.setCabinetType(cabs, id, type)),
 
-    setFrontStyle: (id, style) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      const patch: Partial<Cabinet> = { frontStyle: style };
-      if (style === "desk") {
-        patch.toeKick = false;
-        patch.shelves = 0;
-        if (sel.drawerCount < 1) patch.drawerCount = 1;
-      }
-      if (style === "opening") {
-        patch.toeKick = false;
-        patch.shelves = 0;
-      }
-      const tmp = { ...sel, ...patch };
-      patch.drawerHeights = defaultHeights(tmp, get().project.settings);
-      patchCab(id, patch);
-    },
+    setFrontStyle: (id, style) =>
+      withCabinets((cabs) => ops.setFrontStyle(cabs, get().project.settings, id, style)),
 
-    setOverlay: (id, overlay) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      // Budget changes with overlay; reset drawer heights to a fresh even split.
-      const tmp = { ...sel, overlay };
-      patchCab(id, { overlay, drawerHeights: defaultHeights(tmp, get().project.settings) });
-    },
+    setOverlay: (id, overlay) =>
+      withCabinets((cabs) => ops.setOverlay(cabs, get().project.settings, id, overlay)),
 
-    setConstruction: (id, c) => {
-      const sel = get().project.cabinets.find((x) => x.id === id);
-      if (!sel) return;
-      const tmp = { ...sel, construction: c };
-      patchCab(id, { construction: c, drawerHeights: defaultHeights(tmp, get().project.settings) });
-    },
+    setConstruction: (id, c) =>
+      withCabinets((cabs) => ops.setConstruction(cabs, get().project.settings, id, c)),
 
-    setDrawerCount: (id, n) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      patchCab(id, {
-        drawerCount: n,
-        drawerHeights: evenHeights(sel, n, get().project.settings),
-      });
-    },
+    setDrawerCount: (id, n) =>
+      withCabinets((cabs) => ops.setDrawerCount(cabs, get().project.settings, id, n)),
 
-    resetDrawerHeights: (id) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      patchCab(id, { drawerHeights: defaultHeights(sel, get().project.settings) });
-    },
+    resetDrawerHeights: (id) =>
+      withCabinets((cabs) => ops.resetDrawerHeights(cabs, get().project.settings, id)),
 
-    setDrawerHeightAt: (id, i, value) => {
-      const sel = get().project.cabinets.find((c) => c.id === id);
-      if (!sel) return;
-      patchCab(id, {
-        drawerHeights: withDrawerHeight(sel, get().project.settings, i, value),
-      });
-    },
+    setDrawerHeightAt: (id, i, value) =>
+      withCabinets((cabs) => ops.setDrawerHeightAt(cabs, get().project.settings, id, i, value)),
+
+    setRunBreak: (id, on) => withCabinets((cabs) => ops.setRunBreak(cabs, id, on)),
 
     setConstructionAll: (mode) =>
-      withCabinets((cabs) =>
-        cabs.map((c) => {
-          const next = { ...c, construction: mode };
-          return { ...next, drawerHeights: defaultHeights(next, get().project.settings) };
-        }),
-      ),
+      withCabinets((cabs) => ops.setConstructionAll(cabs, get().project.settings, mode)),
 
     setOverlayAll: (mode) =>
-      withCabinets((cabs) =>
-        cabs.map((c) => {
-          const next = { ...c, overlay: mode };
-          return { ...next, drawerHeights: defaultHeights(next, get().project.settings) };
-        }),
-      ),
+      withCabinets((cabs) => ops.setOverlayAll(cabs, get().project.settings, mode)),
 
-    updateSettings: (patch) =>
-      apply({ ...get().project, settings: { ...get().project.settings, ...patch } }),
+    updateSettings: (patch) => withSettings((s) => ops.updateSettings(s, patch)),
 
-    updateStock: (id, patch) => {
-      const s = get().project.settings;
-      apply({
-        ...get().project,
-        settings: {
-          ...s,
-          stocks: { ...s.stocks, [id]: { ...s.stocks[id], ...patch } },
-        },
-      });
-    },
+    updateStock: (id, patch) => withSettings((s) => ops.updateStock(s, id, patch)),
 
-    setRoleStock: (role, stockId) => {
-      const s = get().project.settings;
-      apply({
-        ...get().project,
-        settings: { ...s, roleStock: { ...s.roleStock, [role]: stockId } },
-      });
-    },
+    setRoleStock: (role, stockId) => withSettings((s) => ops.setRoleStock(s, role, stockId)),
 
-    updateHardware: (patch) => {
-      const s = get().project.settings;
-      apply({
-        ...get().project,
-        settings: { ...s, hardware: { ...s.hardware, ...patch } },
-      });
-    },
+    updateHardware: (patch) => withSettings((s) => ops.updateHardware(s, patch)),
   };
 });
 

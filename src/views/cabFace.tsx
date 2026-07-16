@@ -18,21 +18,30 @@ import { drawerStackBudget, getDrawerHeights } from "@/engine/drawers";
 const FRAME_BG = "#A9824F";
 const HANDLE = "rgba(31,20,14,.45)";
 
+/** Whether this cabinet sits at an exposed END of its run (for shared stiles). */
+export interface RunEnds {
+  leftEnd: boolean;
+  rightEnd: boolean;
+}
+
+const SOLO_ENDS: RunEnds = { leftEnd: true, rightEnd: true };
+
 export function renderFace(
   c: Cabinet,
   accent: string,
   ppi: number,
   tkPx: number,
   s: Settings,
+  ends: RunEnds = SOLO_ENDS,
 ): ReactNode {
-  if (c.frontStyle === "opening") return openingFace(c, ppi, tkPx, s);
+  if (c.frontStyle === "opening") return openingFace(c, ppi, tkPx, s, ends);
   if (isInset(c)) {
     // Side/top/bottom border: wide hardwood frame (framed) or thin box edge.
     // Between-face rail: a mid rail (framed / railed inset) or a thin reveal.
     const effFF = effectiveFrameWidth(c, s);
     const railFF = insetStackGap(c, s);
     const frameColor = isFramed(c) ? FRAME_BG : "#D8CCB2";
-    return insetFace(c, accent, ppi, tkPx, s, effFF, railFF, frameColor);
+    return insetFace(c, accent, ppi, tkPx, s, effFF, railFF, frameColor, ends);
   }
   // Full overlay — fronts sit proud, covering the box/frame (frame hidden).
   return framelessFace(c, accent, ppi, tkPx, s);
@@ -173,8 +182,16 @@ function insetFace(
   effFF: number,
   railFF: number,
   frameColor: string,
+  ends: RunEnds,
 ): ReactNode {
-  const ffpx = Math.max(2.5, effFF * ppi); // side stiles + top/bottom border
+  const ffpx = Math.max(2.5, effFF * ppi); // side stiles + bottom border
+  // The top rail is usually wider than the stiles when framed.
+  const topV = isFramed(c) ? s.faceFrameTop || 2 : effFF;
+  const topPx = Math.max(2.5, topV * ppi);
+  // A shared joint shows half a stile (its neighbour supplies the other half),
+  // so a run of joined cabinets reads as one continuous frame.
+  const leftFfpx = ends.leftEnd ? ffpx : Math.max(1.5, ffpx / 2);
+  const rightFfpx = ends.rightEnd ? ffpx : Math.max(1.5, ffpx / 2);
   const railpx = Math.max(1, railFF * ppi); // rail/gap between stacked faces
   const rev = Math.max(0.8, 0.125 * ppi);
   const FRAME_BG = frameColor;
@@ -194,9 +211,6 @@ function insetFace(
     >
       <div style={{ position: "absolute", top: "44%", left: "50%", width: 2, height: "12%", background: "rgba(31,20,14,.5)", transform: "translateX(-50%)", borderRadius: 1 }} />
     </div>
-  );
-  const railEnd = (key: string) => (
-    <div key={key} style={{ flex: "0 0 " + ffpx + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
   );
   const railMid = (key: string) => (
     <div key={key} style={{ flex: "0 0 " + railpx + "px", background: FRAME_BG, borderTop: "1px solid rgba(31,20,14,.25)", borderBottom: "1px solid rgba(31,20,14,.25)" }} />
@@ -229,7 +243,7 @@ function insetFace(
   } else if (fs === "door_drawer") {
     const dh = getDrawerHeights(c, s)[0];
     const boxH = boxHeight(c, s);
-    const doorsGrow = Math.max(1, boxH - 3 * effFF - dh);
+    const doorsGrow = Math.max(1, boxH - topV - 2 * effFF - dh);
     mods = [drawerMod("m0", dh), doorsMod("m1", doorsGrow, c.doorCount)];
   } else if (fs === "desk") {
     const hs = getDrawerHeights(c, s);
@@ -237,21 +251,30 @@ function insetFace(
     mods = hs.map((dh, i) => drawerMod("m" + i, dh));
     mods.push(openMod("open", Math.max(1, boxHeight(c, s) - sum)));
   }
-  const col: ReactNode[] = [railEnd("top")];
+  // Ladder frame: continuous top (and, unless a desk, bottom) rails own the full
+  // width; the stiles are captured between them, and the openings + mid rails
+  // fill the column between the stiles.
+  const hasBottom = fs !== "desk";
+  const col: ReactNode[] = [];
   mods.forEach((m, i) => {
     if (i > 0) col.push(railMid("r" + i));
     col.push(m);
   });
-  if (fs !== "desk") col.push(railEnd("bot"));
+  const railBar = (key: string, edge: "top" | "bottom", px: number) => (
+    <div
+      key={key}
+      style={{ position: "absolute", left: 0, right: 0, [edge]: 0, height: px, background: FRAME_BG } as CSSProperties}
+    />
+  );
   const stile = (side: "left" | "right") => (
     <div
       key={side}
       style={{
         position: "absolute",
-        top: 0,
-        bottom: 0,
+        top: topPx,
+        bottom: hasBottom ? ffpx : 0,
         [side]: 0,
-        width: ffpx,
+        width: side === "left" ? leftFfpx : rightFfpx,
         background: FRAME_BG,
         [side === "left" ? "borderRight" : "borderLeft"]: "1px solid rgba(31,20,14,.25)",
       } as CSSProperties}
@@ -259,9 +282,11 @@ function insetFace(
   );
   return (
     <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: tkPx }}>
+      {railBar("top", "top", topPx)}
+      {hasBottom && railBar("bot", "bottom", ffpx)}
       {stile("left")}
       {stile("right")}
-      <div style={{ position: "absolute", top: 0, bottom: 0, left: ffpx, right: ffpx, display: "flex", flexDirection: "column" }}>{col}</div>
+      <div style={{ position: "absolute", top: topPx, bottom: hasBottom ? ffpx : 0, left: leftFfpx, right: rightFfpx, display: "flex", flexDirection: "column" }}>{col}</div>
     </div>
   );
 }
@@ -270,14 +295,18 @@ function insetFace(
 /* Appliance opening                                                   */
 /* ------------------------------------------------------------------ */
 
-function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings): ReactNode {
+function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings, ends: RunEnds): ReactNode {
   const framed = (c.construction || "frameless") === "framed";
   const ffpx = Math.max(2.5, (s.frameWidth || 1.5) * ppi);
+  const topPx = Math.max(2.5, (s.faceFrameTop || 2) * ppi); // wider top rail
+  const leftFfpx = ends.leftEnd ? ffpx : Math.max(1.5, ffpx / 2);
+  const rightFfpx = ends.rightEnd ? ffpx : Math.max(1.5, ffpx / 2);
   const kids: ReactNode[] = [];
   if (framed) {
-    kids.push(<div key="sl" style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: ffpx, background: FRAME_BG }} />);
-    kids.push(<div key="sr" style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: ffpx, background: FRAME_BG }} />);
-    kids.push(<div key="tr" style={{ position: "absolute", top: 0, left: 0, right: 0, height: ffpx, background: FRAME_BG }} />);
+    // Continuous top rail; the two stiles hang beneath it to the floor.
+    kids.push(<div key="sl" style={{ position: "absolute", top: topPx, bottom: 0, left: 0, width: leftFfpx, background: FRAME_BG }} />);
+    kids.push(<div key="sr" style={{ position: "absolute", top: topPx, bottom: 0, right: 0, width: rightFfpx, background: FRAME_BG }} />);
+    kids.push(<div key="tr" style={{ position: "absolute", top: 0, left: 0, right: 0, height: topPx, background: FRAME_BG }} />);
   }
   const pad = framed ? ffpx : 5;
   kids.push(
@@ -285,7 +314,7 @@ function openingFace(c: Cabinet, ppi: number, tkPx: number, s: Settings): ReactN
       key="void"
       style={{
         position: "absolute",
-        top: framed ? ffpx : 6,
+        top: framed ? topPx : 6,
         left: pad,
         right: pad,
         bottom: 4,

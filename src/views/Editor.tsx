@@ -49,6 +49,7 @@ export function Editor() {
   const setCabinetType = useStore((st) => st.setCabinetType);
   const setConstruction = useStore((st) => st.setConstruction);
   const setOverlay = useStore((st) => st.setOverlay);
+  const setRunBreak = useStore((st) => st.setRunBreak);
   const setFrontStyle = useStore((st) => st.setFrontStyle);
   const setDrawerCount = useStore((st) => st.setDrawerCount);
   const resetDrawerHeights = useStore((st) => st.resetDrawerHeights);
@@ -321,6 +322,19 @@ export function Editor() {
           </Toggle>
         </div>
       )}
+
+      <div style={{ marginBottom: 18 }}>
+        <FieldLabel>Run</FieldLabel>
+        <Toggle
+          active={sel.runBreak === true}
+          style={{ width: "100%", textAlign: "left", padding: "9px 12px" }}
+          onClick={() => setRunBreak(sel.id, sel.runBreak !== true)}
+        >
+          {sel.runBreak === true
+            ? "Starts a new run — break before this"
+            : "Joins the run on its left"}
+        </Toggle>
+      </div>
 
       <div style={{ fontFamily: font.mono, fontSize: 11, color: color.faint, background: color.panelAlt, borderRadius: 5, padding: "9px 11px", marginBottom: 18, lineHeight: 1.5 }}>
         Carcass box: {boxNote}

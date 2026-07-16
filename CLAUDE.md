@@ -73,11 +73,80 @@ modules feeding `compute`:
   height; plus the predicates `isFramed`/`isInset`/`isRailInset`/`isOpenBox`.
 - `drawers` — drawer-front height model (budget / even split / per-drawer clamp).
 - `parts` — cut-list generation (carcass, fronts, face frame, drawer boxes).
+  `genParts(c, s, frame?)` takes an optional `FrameContext`: when a continuous
+  run frame owns the face frame, it suppresses the per-cabinet stiles/rails and
+  re-keys the inset front WIDTH off the bay's run opening.
+- `runs` / `runParts` — the **run model** (see below).
 - `hardware`, `packing` (first-fit-decreasing sheet nesting), `cost`, `steps`,
   `labels`.
 
 When adding engine math: write the function pure, export it from its module, and
 add a golden-value test next to it (`*.test.ts` colocated in `src/engine/`).
+
+### Runs — the unit that owns shared structure
+
+Cabinets are independent boxes, but a real kitchen joins contiguous ones into a
+**run** that shares ONE continuous face frame — a **ladder**: one long top rail
+and one long bottom rail (per closed span) span the whole run, with the shared
+stiles captured between them at every joint — and ONE toe-kick base. A run is
+**derived, never stored**:
+`runs.ts:runsOf(cabinets, s)` walks each lane (base/tall vs wall) in array order
+— mirroring the renderers' `bx += c.width` — and breaks at a `Cabinet.runBreak`,
+or a type/height/depth/construction change. The only persisted hint is the
+per-cabinet `runBreak` escape hatch (corner / appliance gap / island), editable
+in the cabinet editor.
+
+`compute()` runs a per-cabinet pass then a **run-level pass**: `runParts.ts`
+emits the continuous frame (`genRunFrameParts`: ONE full-run top rail, ONE bottom
+rail per contiguous closed span — growing down to `faceFrameFloorGap` over a toe
+kick — and `members+1` shared stiles captured between the rails, each resting on
+its bottom rail or running to the floor beside an open bay) and
+the separate base (`genBaseParts`: a ply ladder + recessed fascia + side returns
+per contiguous toe-kicked segment). Both feed the SAME accumulators via an
+extracted `ingestPart()` and appear as synthetic `"Run"` cut groups. Toggled by
+`settings.continuousFaceFrame` / `separateBase` (both default ON; the geometry
+`boxHeight` is unchanged so drawer budgets don't move). The 3D (`CabinetScene`)
+and 2D (`Elevation`/`cabFace`) renderers re-derive the same run grouping so the
+shared half-stiles and side-recessed base line up with the cut list.
+
+### Parallel geometry — keep the FOUR derivations in lockstep
+
+The same cabinet/run geometry is re-derived independently in four places, and
+they MUST agree. A change to one that skips the others is a silent bug — the
+**build walkthrough drifted exactly this way** (it kept a 1½″ top rail and the
+old plinth after the run model landed). The four:
+
+1. **Cut list (source of truth for dimensions)** — `engine/parts.ts:genParts`
+   + `engine/runParts.ts` (`genRunFrameParts` / `genBaseParts`).
+2. **Main 3D** — `three/CabinetScene.ts:addCabinet3D` (whole-run render).
+3. **Build-walkthrough 3D** — `three/buildModel.ts:cabinetBuildParts`, a
+   SEPARATE per-cabinet generator that mirrors `addCabinet3D` (it also feeds the
+   per-step build narration in `engine/steps.ts`).
+4. **2D elevation** — `views/cabFace.tsx` + `views/Elevation.tsx`.
+
+Two invariants the renderers have already broken once — both shipped to a real
+cut and are now pinned by tests:
+
+- **The back is APPLIED, not set in.** The carcass stops one back-thickness shy
+  of the wall (`carcassDepth` = `D - backThickness`) and `Back (applied)` is cut
+  the **full `W × boxHeight`**, screwed on over the rear edges — so it shows from
+  the side. The 3D drew the sides full-depth with the back tucked inset between
+  them; nobody was ever told to cut that back.
+- **A drawer box is sized to its bay's RUN opening**, not to a solo
+  `W - 2·frameWidth`. At a shared joint the bay carries only a HALF stile, so the
+  opening (and the box) is wider. Box, inset front and slide blocking must all
+  key off the same opening — `parts.ts:frontOpeningWidth`. Sizing the box solo
+  while the front used the run opening made the boxes undersized and tripled the
+  slide pack-out. The derived box/blocking specs are stamped onto
+  `CabinetParts.geometry` (`drawerBoxes` / `slideBlocking`); **read them from
+  there** rather than re-deriving — a bare `drawerBoxSpecs(c, s)` is the solo case.
+
+Rule: any change to face-frame / base / opening / desk geometry (rail widths,
+frame bottoms, the drawer deck, side recesses, …) must be applied to **all four**
+and pinned with colocated golden tests — `engine/*.test.ts` for the cut list and
+`three/buildModel.test.ts` for the walkthrough (it asserts the top-rail height,
+the frame-floor drop, the side-recessed base and the desk deck). Always run
+`npm run build && npm test` before committing; both must be green.
 
 ### Two orthogonal cabinet axes
 
@@ -104,19 +173,87 @@ to `Settings` or `Stock`, add it to `DEFAULT_SETTINGS`/`DEFAULT_STOCKS` in
 `Stock` is a physical material; `Role` (carcass/back/front/drawerBox/…) maps to a
 `StockId` via `settings.roleStock`. Parts sharing a stock nest together; `linear`
 stock (hardwood face frame) is priced by the foot and never nested into sheets.
+A linear stock may carry `boards` — the actual boards on hand (width × length ×
+qty). When set, the sheets view plans rip-aware cuts from THOSE boards
+(`engine/packing.ts:packBoards`: crosscut a segment, rip it into strips, crosscut
+the parts) instead of assuming a bought board per part width; parts the boards
+can't produce surface as `board_oversize`/`board_shortfall` in the audit and as
+`summary.boardShort`. An empty/absent `boards` keeps the legacy per-profile plan
+on `stockLength`.
 
 ### UI specifics
 
-- Six views (`layout`, `cutlist`, `sheets`, `build`, `3d`, `settings`) switch on
+- Seven views (`layout`, `cutlist`, `sheets`, `pockets`, `build`, `3d`, `settings`) switch on
   `store.view` in `App.tsx`; the active tab is mirrored to the URL hash and is
   deep-linkable.
 - The 3D view (`three/CabinetScene.ts`, `views/ThreeView.tsx`) is `lazy`-loaded so
   Three.js stays out of the initial bundle. Keep it that way.
+- The build walkthrough's per-step 3D (`views/BuildStepScene.tsx`) reuses the same
+  `CabinetScene` via its **build-focus** mode: `setBuildFocus` renders ONE cabinet
+  staged for the current step — earlier stages solid, the current stage glowing,
+  later stages ghosted (plus a cutaway that reveals drawer boxes/shelves). The
+  staged geometry is a pure, unit-tested generator (`three/buildModel.ts`,
+  `cabinetBuildParts`) keyed by the `BuildStage` that `engine/steps.ts` now tags
+  onto every step. `BuildStepScene` is `lazy`-loaded too **and** gated behind a
+  `mounted` flag in `BuildView`, so the node smoke test never instantiates a WebGL
+  canvas. The Pockets tab's 3D bench view follows the same pattern
+  (`views/PocketScenePanel.tsx` lazy + mount-gated in `PocketsView`; scene in
+  `three/pocketScene.ts`, pure marker layout in `three/pocketLayout.ts` with
+  colocated golden tests). Built/ghost is decided by the set of stages actually reached in the
+  cabinet's step list (not a global stage order) — an appliance surround is framed
+  *before* it is stood in place, so `faceFrame` can precede `base`.
+  Step order follows real assembly: all **interior** work (`drawers` boxes,
+  `shelves` — the stages that auto-enable the cutaway) happens first, then the
+  **faces** go on last (`doors` → `drawerFronts` → `pulls`). Keeping faces after
+  the cutaway stages means a hung door is never hidden again, the drawer face gets
+  its own visible "attach the front" beat, and the walkthrough ends on the
+  finished box. Handles all live on the final `pulls` stage regardless of which
+  face they sit on.
 - Styling is inline via tokens from `theme.ts` — there is no CSS framework.
 - Vitest runs in a `node` environment (see `vite.config.ts`), so there is no DOM.
   The render smoke test (`app.smoke.test.tsx`) works around this by
   `renderToString`-ing every non-3D view (server-side) to catch runtime throws the
   type-checker can't — extend it when adding a view.
+
+### Mutation rules live in `domain/ops.ts` (shared by store + MCP)
+
+The business rules that mutate a project — the drawer-stack budget recompute when
+construction/overlay/frontStyle/drawerCount/type change, the desk/opening
+open-box invariants, the type clamps — are **pure functions in `src/domain/ops.ts`**
+(`(cabinets|settings, …args) → fresh value`). `state/store.ts` wraps them with
+undo history + autosave; the headless MCP server calls them directly. Keep new
+mutation logic here, not inlined in the store, so the UI and an agent can't drift.
+`src/engine/audit.ts` is the pure design review (oversize parts, exhausted drawer
+budgets, wide doors, mixed toe-kick runs, …) — golden-tested like the rest of the engine.
+
+## Headless: the MCP server (`mcp/`)
+
+`mcp/server.ts` exposes the builder over the [Model Context Protocol](https://modelcontextprotocol.io)
+so an agent can design / audit / assist a build. It imports the **pure** engine +
+`ops` (never React/DOM), holds one project in a `CabinetSession` (`mcp/session.ts`),
+and round-trips it through the same `.cabinets.json` files. Run it with `npm run mcp`
+(stdio via `tsx`, so the `@/*` alias resolves from `tsconfig.json` with no build
+step); `.mcp.json` registers it for MCP clients. `npm run mcp:smoke` drives the
+live server end-to-end. Formatters (`mcp/format.ts`) and the glossary
+(`mcp/reference.ts`) turn the model into agent-readable text — they never recompute
+domain math, same rule as the views. `mcp/` is in the root `tsconfig.json` include,
+so `npm run typecheck`/`build` cover it; vitest also runs `mcp/**/*.test.ts` (the
+session autosave suite), while the full stdio round-trip is the `npm run mcp:smoke`
+subprocess check. Only JSON-RPC goes to stdout; logs go to stderr.
+
+### Autosave + live preview
+
+Every mutation autosaves the project to disk (`CabinetSession.persist()` writes the
+working file — from `CABINETS_FILE` / open / save — plus a mirror to the
+`CABINETS_LIVE_FILE`), mirroring the app's localStorage autosave, so `save_project`
+is only for save-as/export. When `npm run dev` is running, the **dev-only** Vite
+plugin `src/dev/cabinetsLivePlugin.ts` watches the live file and pushes it over the
+HMR WebSocket to `src/state/liveSync.ts`, which folds it into the store via
+`syncProject` (keeps the current view + selection, pushes undo so a live overwrite is
+recoverable). The plugin is `apply:"serve"` and the listener is dynamically imported
+behind `import.meta.hot`, so the production build never includes either — the
+`.mcp.json` sets `CABINETS_LIVE_FILE=live.cabinets.json` (gitignored) and Vite watches
+the same default.
 
 ## Domain caveat
 

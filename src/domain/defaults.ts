@@ -53,6 +53,8 @@ export const DEFAULT_STOCKS: Record<StockId, Stock> = {
     sheetH: 0,
     costPerSheet: 0,
     costPerFoot: 3.25,
+    // Standard board length the cut layout packs face-frame parts onto (8 ft).
+    stockLength: 96,
   },
 };
 
@@ -71,6 +73,9 @@ export const DEFAULT_ROLE_STOCK: Record<Role, StockId> = {
   drawerBox: "ply12",
   drawerBottom: "ply14",
   faceFrame: "hardwood",
+  // Toe-kick base ladder + fascia: 3/4" ply, so it nests into sheets and is
+  // priced per sheet (not the by-the-foot hardwood line).
+  base: "ply34",
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -78,13 +83,26 @@ export const DEFAULT_SETTINGS: Settings = {
   reveal: 0.125,
   toeKick: 4.5,
   toeKickDepth: 3,
+  toeKickSideRecess: 2,
+  continuousFaceFrame: true,
+  separateBase: true,
+  sharedPartitions: false,
+  faceFrameFloorGap: 3.25,
   upperBottom: 54,
   counterH: 36,
   kerf: 0.125,
   allowRotate: true,
+  // Store panel-saw breakdown is a per-shopping-trip choice, so it starts off;
+  // 1/2" of trim is a comfortable single clean-up pass with a track saw.
+  storeBreakdown: false,
+  storeTrim: 0.5,
   frameWidth: 1.5,
+  faceFrameTop: 2,
   construction: "frameless",
   includeDrawerBoxes: true,
+  // Off by default: existing projects keep the generic fastener wording until
+  // the builder opts into pocket-hole joinery in Settings.
+  pocketHoles: false,
   showGuideLines: true,
   edgeBandPerFoot: 0.35,
   stocks: DEFAULT_STOCKS,

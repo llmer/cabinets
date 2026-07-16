@@ -42,6 +42,7 @@ function migrateCabinet(raw: Partial<Cabinet>): Cabinet {
           ? "inset"
           : "full",
     ...(Array.isArray(raw.drawerHeights) ? { drawerHeights: raw.drawerHeights } : {}),
+    ...(raw.runBreak === true ? { runBreak: true } : {}),
   };
 }
 
