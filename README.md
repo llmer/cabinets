@@ -8,6 +8,12 @@
 
 **Try it live → [llmer.github.io/cabinets](https://llmer.github.io/cabinets/)**
 
+> **Disclaimer:** everything this tool produces — dimensions, cut lists, sheet
+> nesting, hardware counts, costs, build steps — is an **estimate for reference
+> only**, with **no guarantee** of correctness or fitness for your build. Check
+> the math against your own method, your actual materials and your site
+> measurements before you commit to cutting or buying anything.
+
 A local-first cabinet builder for the **32 mm system**. Lay out a run of base,
 wall and tall cabinets; the app derives a complete cut list, nests the parts onto
 sheet goods, prices the materials and hardware, writes step-by-step assembly
