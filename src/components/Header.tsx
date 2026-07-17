@@ -102,28 +102,23 @@ export function Header() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        {/* Brand mark: parentheses-as-frame around an open carcass, 32mm bore
-            rows as knockouts — keep in sync with public/favicon.svg. */}
         <svg
           width="34"
           height="34"
-          viewBox="0 0 100 100"
+          viewBox="0 0 80 80"
           fill="none"
           stroke={color.inkStrong}
-          strokeWidth="11"
-          strokeLinecap="butt"
+          strokeWidth="2.4"
+          strokeLinejoin="round"
+          strokeLinecap="round"
         >
-          <path d="M38 28 L38 66 L62 66 L62 28" strokeLinejoin="miter" />
-          <path d="M25 20 A36.6 36.6 0 0 0 25 80" />
-          <path d="M75 20 A36.6 36.6 0 0 1 75 80" />
-          <g fill={color.panel} stroke="none">
-            <circle cx="38" cy="40" r="2.4" />
-            <circle cx="38" cy="50" r="2.4" />
-            <circle cx="38" cy="60" r="2.4" />
-            <circle cx="62" cy="40" r="2.4" />
-            <circle cx="62" cy="50" r="2.4" />
-            <circle cx="62" cy="60" r="2.4" />
-          </g>
+          <rect x="12" y="14" width="56" height="52" rx="2" />
+          <line x1="40" y1="14" x2="40" y2="66" />
+          <circle cx="34" cy="40" r="1.6" fill={color.inkStrong} stroke="none" />
+          <circle cx="46" cy="40" r="1.6" fill={color.inkStrong} stroke="none" />
+          <line x1="12" y1="66" x2="68" y2="66" strokeWidth="3.4" />
+          <line x1="18" y1="66" x2="18" y2="72" />
+          <line x1="62" y1="66" x2="62" y2="72" />
         </svg>
         <div>
           <div
