@@ -255,6 +255,33 @@ behind `import.meta.hot`, so the production build never includes either — the
 `.mcp.json` sets `CABINETS_LIVE_FILE=live.cabinets.json` (gitignored) and Vite watches
 the same default.
 
+### The agent bridge (all builds, incl. the hosted app)
+
+`mcp/bridge.ts` opens a loopback WebSocket (default `127.0.0.1:5178`) so ANY build
+of the app — including the GitHub Pages deployment — can follow the session without
+a dev server: the browser side is `src/state/bridgeSync.ts` (opt-in via the Header
+**Agent** popover, `src/components/AgentBridge.tsx`; status lives in `store.bridge`).
+Sync is whole-project, last-write-wins on `updatedAt`, TWO-WAY (unlike the dev live
+file): the first snapshot after connect force-applies via `syncProject(p, force)`
+("connect" means "follow the agent"; needed because `loadProject` restamps
+`updatedAt` on every page load), after that only strictly-newer projects apply in
+either direction, and both sides restore the sender's `updatedAt` after
+`migrateProject` (which restamps — right for imports, wrong for LWW). Inbound
+payloads pass the same migrate+`compute` gate as `open_project`; browser origins
+are allowlisted (`isAllowedOrigin` — hosted app + localhost; extras via
+`CABINETS_BRIDGE_ORIGINS`); `CABINETS_BRIDGE=off` / `CABINETS_BRIDGE_PORT` control
+it; a taken port logs and degrades gracefully. Session→bridge notification is
+`CabinetSession.subscribe`; page pushes adopt via `CabinetSession.adopt`. Golden +
+live-socket tests in `mcp/bridge.test.ts`.
+
+The server is also **npx-runnable straight from the repo** (`npx -y
+github:llmer/cabinets`): `package.json` has `bin` → `bin/frameless-mcp.mjs`,
+`files: ["bin/"]` and a `prepare` script (`scripts/build-mcp.mjs`, esbuild) that
+bundles `mcp/server.ts` + deps into that single file — `prepare` also runs on every
+local `npm install` and in CI's `npm ci`. `npm run mcp` (tsx, unbundled) stays the
+dev path; `SMOKE_SERVER="node bin/frameless-mcp.mjs" npm run mcp:smoke` points the
+smoke suite at the bundle.
+
 ## Domain caveat
 
 Every view repeats it and so should any output: this estimates a cut list and is

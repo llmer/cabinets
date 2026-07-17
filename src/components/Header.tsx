@@ -6,6 +6,7 @@ import {
   exportProjectFile,
   importProjectFile,
 } from "@/state/persistence";
+import { AgentBridge } from "./AgentBridge";
 import { Button } from "./ui";
 
 function Chip({
@@ -186,6 +187,7 @@ export function Header() {
             LIVE · following agent
           </div>
         )}
+        <AgentBridge />
         <Chip label="Base run" value={summary.baseRun} />
         <Chip label="Sheets" value={String(summary.sheetCount)} sub={summary.yieldStr} />
         <Chip label="Est. material" value={summary.cost} valueColor={color.rust} />

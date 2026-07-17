@@ -45,6 +45,8 @@ export class CabinetSession {
   readonly liveFile: string | null;
   /** Message from the last failed autosave write (cleared on success). */
   private lastError: string | null = null;
+  /** Change listeners (the agent bridge broadcasts project updates from here). */
+  private listeners = new Set<(p: Project) => void>();
 
   constructor(opts: SessionOptions = {}, project?: Project) {
     this.workingPath = opts.workingPath ? safeJsonPath(opts.workingPath) : null;
@@ -105,6 +107,16 @@ export class CabinetSession {
     return "in memory only — save_project <path.json> to persist";
   }
 
+  /** Subscribe to project changes (fires after every persisted mutation/open/adopt). */
+  subscribe(fn: (p: Project) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private changed(): void {
+    for (const fn of this.listeners) fn(this.project);
+  }
+
   private writeTo(target: string): void {
     // Write atomically (temp + rename) so a watcher / live reader never sees a
     // torn, half-written JSON. rename on the same filesystem is atomic, and it's
@@ -129,6 +141,7 @@ export class CabinetSession {
       console.error(`autosave to ${this.workingPath} failed:`, this.lastError);
     }
     this.mirrorLive();
+    this.changed();
   }
 
   /** Write ONLY the live preview file (used on open/save so the source file the
@@ -180,6 +193,18 @@ export class CabinetSession {
     // Stream what we opened to the browser, but do NOT rewrite the source file —
     // opening should be read-only until the first actual edit autosaves it.
     this.mirrorLive();
+    this.changed();
+  }
+
+  /**
+   * Adopt a project pushed from OUTSIDE (the browser, over the agent bridge).
+   * The caller has already migrated + validated it and checked it is NEWER than
+   * the current project; `updatedAt` is kept verbatim so last-write-wins stays
+   * symmetric on both ends (restamping here would make every echo look new).
+   */
+  adopt(project: Project): void {
+    this.project = project;
+    this.persist();
   }
 
   /**

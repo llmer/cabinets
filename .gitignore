@@ -1,5 +1,6 @@
 node_modules
 dist
+bin
 dist-ssr
 *.local
 .DS_Store
@@ -10,3 +11,4 @@ live.cabinets.json
 live.cabinets.json.tmp-*
 .playwright-mcp
 *.cabinets (1).json
+.e2e-shots

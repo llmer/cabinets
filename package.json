@@ -4,9 +4,20 @@
   "version": "1.0.0",
   "type": "module",
   "description": "frame(less) — a local-first cabinet builder for the 32mm system. Layout, cut lists, sheet nesting, assembly steps and a 3D preview.",
+  "bin": {
+    "frameless-mcp": "bin/frameless-mcp.mjs"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:mcp": "node scripts/build-mcp.mjs",
+    "prepare": "npm run build:mcp",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -19,6 +30,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "three": "^0.160.1",
+    "ws": "^8.21.1",
     "zod": "^3.25.76",
     "zustand": "^4.5.5"
   },
@@ -27,7 +39,9 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.160.0",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "esbuild": "^0.28.1",
     "tsx": "^4.22.4",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",

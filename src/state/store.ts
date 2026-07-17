@@ -48,6 +48,8 @@ interface AppState {
   toast: string | null;
   /** Dev live sync is active — the browser is following an agent's MCP edits. */
   live: boolean;
+  /** Agent-bridge connection state (driven by state/bridgeSync.ts). */
+  bridge: "off" | "connecting" | "connected";
 
   /* build walkthrough (interaction state — never feeds compute) */
   buildMode: BuildMode;
@@ -84,8 +86,10 @@ interface AppState {
   /* project lifecycle */
   resetProject: () => void;
   loadProjectObj: (p: Project) => void;
-  /** Fold in a project streamed from an external file (dev live sync). */
-  syncProject: (p: Project) => void;
+  /** Fold in a project streamed from outside (dev live sync / agent bridge).
+   * `force` skips the stale guard — used for the bridge's first snapshot,
+   * where "connect" MEANS "follow the agent session from here". */
+  syncProject: (p: Project, force?: boolean) => void;
   renameProject: (name: string) => void;
   undo: () => void;
   redo: () => void;
@@ -177,6 +181,7 @@ export const useStore = create<AppState>((set, get) => {
     future: [],
     toast: null,
     live: false,
+    bridge: "off",
 
     buildMode: "overview",
     buildDone: loadBuildProgress(initialProject.id),
@@ -265,11 +270,11 @@ export const useStore = create<AppState>((set, get) => {
         buildMode: "overview",
       });
     },
-    syncProject: (p) => {
+    syncProject: (p, force = false) => {
       const s = get();
       // Ignore a STALE push — e.g. an old live.cabinets.json adopted on browser
       // connect — that would clobber newer local work. Only apply what's newer.
-      if (p.updatedAt < s.project.updatedAt) return;
+      if (!force && p.updatedAt < s.project.updatedAt) return;
       // Keep the current view + selection where it can, so watching in the 3D tab
       // doesn't snap back to Layout on every edit.
       const keepSel = p.cabinets.some((c) => c.id === s.selectedId)
