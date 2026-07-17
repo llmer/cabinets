@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "id": "pmr16zsxm8",
+  "name": "maple-v2",
+  "createdAt": 1782856947514,
+  "updatedAt": 1783192462090,
+  "cabinets": [
+    {
+      "id": "cmr16zsxm9",
+      "name": "B1",
+      "type": "base",
+      "width": 17.5,
+      "height": 34.5,
+      "depth": 23.375,
+      "frontStyle": "door_drawer",
+      "doorCount": 1,
+      "drawerCount": 3,
+      "shelves": 1,
+      "toeKick": true,
+      "construction": "framed",
+      "overlay": "inset_rail",
+      "drawerHeights": [
+        6.75
+      ]
+    },
+    {
+      "id": "cmr16zsxm10",
+      "name": "B2",
+      "type": "base",
+      "width": 17,
+      "height": 34.5,
+      "depth": 23.375,
+      "frontStyle": "opening",
+      "doorCount": 2,
+      "drawerCount": 3,
+      "shelves": 0,
+      "toeKick": false,
+      "construction": "framed",
+      "overlay": "inset_rail",
+      "drawerHeights": [
+        9.5,
+        9.5,
+        9.5
+      ]
+    },
+    {
+      "id": "cmr16zsxm11",
+      "name": "B3",
+      "type": "base",
+      "width": 39.5,
+      "height": 34.5,
+      "depth": 23.375,
+      "frontStyle": "desk",
+      "doorCount": 2,
+      "drawerCount": 1,
+      "shelves": 0,
+      "toeKick": false,
+      "construction": "framed",
+      "overlay": "inset_rail",
+      "drawerHeights": [
+        6.75
+      ]
+    }
+  ],
+  "settings": {
+    "units": "in",
+    "reveal": 0.125,
+    "toeKick": 4.5,
+    "toeKickDepth": 3,
+    "toeKickSideRecess": 2,
+    "continuousFaceFrame": true,
+    "separateBase": true,
+    "sharedPartitions": false,
+    "faceFrameFloorGap": 3.25,
+    "upperBottom": 54,
+    "counterH": 36,
+    "kerf": 0.125,
+    "allowRotate": false,
+    "storeBreakdown": false,
+    "storeTrim": 0.5,
+    "frameWidth": 1.5,
+    "faceFrameTop": 2,
+    "construction": "frameless",
+    "includeDrawerBoxes": true,
+    "pocketHoles": true,
+    "showGuideLines": true,
+    "edgeBandPerFoot": 0.35,
+    "stocks": {
+      "ply34": {
+        "id": "ply34",
+        "label": "23/32\" plywood (3/4 nom.)",
+        "kind": "sheet",
+        "thickness": 0.71875,
+        "sheetW": 96,
+        "sheetH": 48,
+        "costPerSheet": 55,
+        "costPerFoot": 0
+      },
+      "ply12": {
+        "id": "ply12",
+        "label": "1/2\" plywood",
+        "kind": "sheet",
+        "thickness": 0.5,
+        "sheetW": 96,
+        "sheetH": 48,
+        "costPerSheet": 45,
+        "costPerFoot": 0
+      },
+      "ply14": {
+        "id": "ply14",
+        "label": "11/32\" plywood",
+        "kind": "sheet",
+        "thickness": 0.34375,
+        "sheetW": 96,
+        "sheetH": 48,
+        "costPerSheet": 32,
+        "costPerFoot": 0
+      },
+      "hardwood": {
+        "id": "hardwood",
+        "label": "3/4\" maple",
+        "kind": "linear",
+        "thickness": 0.75,
+        "sheetW": 0,
+        "sheetH": 0,
+        "costPerSheet": 0,
+        "costPerFoot": 3.25,
+        "boards": [
+          {
+            "width": 2.5,
+            "length": 84,
+            "qty": 1
+          },
+          {
+            "width": 3.5,
+            "length": 168,
+            "qty": 1
+          }
+        ]
+      }
+    },
+    "roleStock": {
+      "carcass": "ply34",
+      "back": "ply14",
+      "front": "ply34",
+      "drawerBox": "ply12",
+      "drawerBottom": "ply14",
+      "faceFrame": "hardwood",
+      "base": "ply34"
+    },
+    "hardware": {
+      "hingeEach": 4,
+      "slidePairEach": 14,
+      "pullEach": 3.5,
+      "shelfPinEach": 0.15,
+      "countPulls": true
+    }
+  }
+}

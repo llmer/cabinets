@@ -1,5 +1,13 @@
 # frame(less) — cabinet builder
 
+[![CI](https://github.com/llmer/cabinets/actions/workflows/ci.yml/badge.svg)](https://github.com/llmer/cabinets/actions/workflows/ci.yml)
+[![Deploy](https://github.com/llmer/cabinets/actions/workflows/deploy.yml/badge.svg)](https://github.com/llmer/cabinets/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](package.json)
+[![MCP](https://img.shields.io/badge/MCP-server%20included-8A2BE2)](mcp/README.md)
+
+**Try it live → [llmer.github.io/cabinets](https://llmer.github.io/cabinets/)**
+
 A local-first cabinet builder for the **32 mm system**. Lay out a run of base,
 wall and tall cabinets; the app derives a complete cut list, nests the parts onto
 sheet goods, prices the materials and hardware, writes step-by-step assembly
@@ -32,6 +40,22 @@ npm run mcp:smoke  # drive the MCP server end-to-end and assert
 ```
 
 Requires Node 18+ (developed on Node 24).
+
+## CI & deployment
+
+Two GitHub Actions workflows live in [`.github/workflows/`](.github/workflows/):
+
+- **[CI](.github/workflows/ci.yml)** — on every push and pull request:
+  typecheck, the full vitest suite (engine golden values + render smoke + MCP
+  session), a production build, and the MCP stdio smoke test.
+- **[Deploy](.github/workflows/deploy.yml)** — every push to `main` builds the
+  app and publishes it to **GitHub Pages** at
+  [llmer.github.io/cabinets](https://llmer.github.io/cabinets/). The workflow
+  sets `BASE_PATH=/cabinets/` so Vite emits asset URLs for the project subpath;
+  local dev and self-hosted builds are unaffected.
+
+Since the app is fully static (no backend), the Pages deployment *is* the
+production release — your projects still live only in your browser.
 
 ## AI agents (MCP server)
 
@@ -154,3 +178,8 @@ All of this is configurable in Settings, and every view repeats the caveat:
 The active project autosaves to `localStorage` on every change. Use Export to
 download a versioned `.json`, Import to load one. Older files are migrated onto
 the current settings schema on load. No data leaves the machine.
+
+## License
+
+[MIT](LICENSE) — this tool estimates a cut list and is **not a guarantee;
+verify against your own method before cutting.**

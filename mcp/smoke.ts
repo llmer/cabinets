@@ -17,7 +17,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const fixture = resolve(root, "maple-v2.cabinets.json");
+const fixture = resolve(root, "mcp", "fixtures", "maple-v2.cabinets.json");
 // Work on a throwaway COPY — autosave writes the opened file, so we must never
 // point the test at the committed fixture. Also a throwaway live file.
 const liveDir = mkdtempSync(join(tmpdir(), "cab-smoke-"));
@@ -176,7 +176,9 @@ async function main(): Promise<void> {
   const bdOff = await client.callTool({ name: "update_settings", arguments: { storeBreakdown: false } });
   check("update_settings turns breakdown back off", !bdOff.isError);
   const sheetsPlain = textOf((await client.callTool({ name: "get_sheets", arguments: {} })) as never);
-  check("get_sheets drops the rip plan when off", !/✂/.test(sheetsPlain));
+  // The boards-on-hand rip layout also uses ✂ (as "✂ crosscut") and stays on —
+  // only the store panel-saw plan ("✂ rips") must disappear with the toggle.
+  check("get_sheets drops the rip plan when off", !/✂ rips /.test(sheetsPlain));
 
   // --- questioner: explain + reference resource ---
   const explain = await client.callTool({ name: "explain", arguments: { topic: "runs" } });

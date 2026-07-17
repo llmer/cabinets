@@ -8,3 +8,5 @@ _design_reference
 coverage
 live.cabinets.json
 live.cabinets.json.tmp-*
+.playwright-mcp
+*.cabinets (1).json

@@ -9,6 +9,9 @@ import { cabinetsLive } from "./src/dev/cabinetsLivePlugin";
 // dev-only `cabinetsLive` plugin streams an agent's MCP edits into the running
 // app (it is apply:"serve", so the production build is untouched).
 export default defineConfig({
+  // GitHub Pages serves project sites from /<repo>/ — the deploy workflow sets
+  // BASE_PATH; local dev and self-hosted builds stay at the root.
+  base: process.env.BASE_PATH || "/",
   plugins: [react(), cabinetsLive()],
   resolve: {
     alias: {
