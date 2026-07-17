@@ -22,6 +22,7 @@ import { drawerStackBudget } from "@/engine/drawers";
 import { runsOf } from "@/engine/runs";
 import { cutListCsv, sheetsCsv, shoppingListText } from "@/state/exporters";
 
+import { DEFAULT_BRIDGE_PORT, startBridge } from "./bridge.js";
 import { CabinetSession } from "./session.js";
 import {
   auditText,
@@ -903,6 +904,25 @@ async function main(): Promise<void> {
   // watches CABINETS_LIVE_FILE relative to ITS cwd) is diagnosable.
   console.error(`  autosave working file: ${session.workingPath ?? "(none — save_project to set one)"}`);
   console.error(`  live preview file:     ${session.liveFile ?? "(none — set CABINETS_LIVE_FILE for live)"}`);
+
+  // Agent bridge: lets the BROWSER app (local or the hosted GitHub Pages
+  // deployment) follow this session live over a loopback WebSocket — the
+  // production counterpart of the dev live file. On by default; disable with
+  // CABINETS_BRIDGE=off, move it with CABINETS_BRIDGE_PORT.
+  if (process.env.CABINETS_BRIDGE !== "off") {
+    const bridge = await startBridge(session, {
+      port: Number(process.env.CABINETS_BRIDGE_PORT || DEFAULT_BRIDGE_PORT),
+      extraOrigins: (process.env.CABINETS_BRIDGE_ORIGINS ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    });
+    if (bridge) {
+      console.error(
+        `  agent bridge:          ws://127.0.0.1:${bridge.port} — open the app and click “Agent” to follow live`,
+      );
+    }
+  }
 }
 
 main().catch((e) => {

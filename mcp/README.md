@@ -58,7 +58,7 @@ localStorage autosave. Two targets, both optional:
 - **live file** — a preview file the dev server watches (`CABINETS_LIVE_FILE`
   env, default `live.cabinets.json`; set in this repo's `.mcp.json`).
 
-**See the agent's work live in the browser:**
+**See the agent's work live in the browser** — two pipes, same result:
 
 ```bash
 npm run dev        # http://localhost:5173  (watches live.cabinets.json)
@@ -66,8 +66,8 @@ npm run dev        # http://localhost:5173  (watches live.cabinets.json)
 
 Then just talk to the agent. Every change it makes streams into the running app
 — layout, cut list, sheets, 3D all update in real time, no reload, no Import.
-The bridge is a **dev-only Vite plugin** (`src/dev/cabinetsLivePlugin.ts`) that
-pushes the file over Vite's WebSocket to a listener in the app
+The dev pipe is a **dev-only Vite plugin** (`src/dev/cabinetsLivePlugin.ts`)
+that pushes the file over Vite's WebSocket to a listener in the app
 (`src/state/liveSync.ts` → `store.syncProject`). It's `apply: "serve"`, so the
 production build never sees it.
 
@@ -78,9 +78,48 @@ agent → tool call → session mutation → autosave live.cabinets.json
                                     browser store.syncProject → live re-render
 ```
 
-You're watching, not co-editing: your own browser edits aren't written to the
-file, so the next agent change overwrites them (undo is available). To keep a
-design, `save_project('mykitchen.cabinets.json')`.
+You're watching, not co-editing on this pipe: your own browser edits aren't
+written to the file, so the next agent change overwrites them (undo is
+available). To keep a design, `save_project('mykitchen.cabinets.json')`.
+
+## The agent bridge (works in EVERY build, including the hosted app)
+
+The server also opens a loopback WebSocket — the **agent bridge**
+(`mcp/bridge.ts`) — so the app can follow the session without a dev server:
+open [the hosted app](https://llmer.github.io/cabinets/) (or any build), click
+**Agent** in the header, and Connect. No clone needed on the app side; the
+server itself is npx-runnable straight from this repo:
+
+```bash
+claude mcp add cabinets -- npx -y github:llmer/cabinets
+```
+
+(`npx` clones, installs, and runs `prepare`, which bundles `mcp/server.ts` into
+a single self-contained `bin/frameless-mcp.mjs` — see `scripts/build-mcp.mjs`.)
+
+Unlike the dev pipe, the bridge is **two-way**: connecting adopts the agent's
+project (your previous page state stays in undo + localStorage), after which the
+newer edit wins on either side — the page pushes your changes back into the
+session, stamped by `updatedAt`.
+
+Security posture:
+
+- binds `127.0.0.1` only — never reachable from the network;
+- browser connections must present an allowed `Origin` (the hosted app +
+  localhost dev/preview), so a random website's tab can't reach the project;
+- the page never dials until you opt in (Header → Agent → Connect), and the
+  choice persists per browser.
+
+Environment knobs (set on the server process):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CABINETS_BRIDGE` | on | `off` disables the bridge entirely |
+| `CABINETS_BRIDGE_PORT` | `5178` | port to listen on (page must match) |
+| `CABINETS_BRIDGE_ORIGINS` | — | comma-separated extra allowed origins (self-hosted deployments) |
+
+If the port is taken (a second agent session), the server logs it and carries
+on without the bridge — tools keep working.
 
 ## Tools
 

@@ -39,9 +39,13 @@ function textOf(res: { content?: Array<{ type: string; text?: string }>; isError
 }
 
 async function main(): Promise<void> {
+  // Default: the dev entrypoint via tsx. Override with SMOKE_SERVER to point
+  // the same suite at another build, e.g. the npx bundle:
+  //   SMOKE_SERVER="node bin/frameless-mcp.mjs" npm run mcp:smoke
+  const [cmd, ...cmdArgs] = (process.env.SMOKE_SERVER ?? `npx tsx ${resolve(root, "mcp/server.ts")}`).split(" ");
   const transport = new StdioClientTransport({
-    command: "npx",
-    args: ["tsx", resolve(root, "mcp/server.ts")],
+    command: cmd,
+    args: cmdArgs,
     cwd: root,
     stderr: "inherit",
     env: { ...(process.env as Record<string, string>), CABINETS_LIVE_FILE: liveFile },

@@ -57,26 +57,52 @@ Two GitHub Actions workflows live in [`.github/workflows/`](.github/workflows/):
 Since the app is fully static (no backend), the Pages deployment *is* the
 production release — your projects still live only in your browser.
 
-## AI agents (MCP server)
+## AI agents (MCP server) — bring your own
 
 frame(less) ships an **[MCP](https://modelcontextprotocol.io) server** so an AI
 agent can drive the tool directly — designing a kitchen, auditing a design, and
-walking a build — using the *same* engine and mutation rules as the app. It's
-registered for this repo in [`.mcp.json`](.mcp.json); open the repo in an
-MCP-capable client (Claude Code, Claude Desktop, Cursor) and enable the
-**cabinets** server, or run `npm run mcp` and point your own client at stdio.
+walking a build — using the *same* engine and mutation rules as the app. Your
+agent, your subscription: it plugs into the session you already have (Claude
+Code, Claude Desktop, Codex — any MCP client). There are no API keys and no
+hosted inference; everything runs on your machine.
 
-It exposes ~27 tools across four jobs — **design** (`add_cabinet`,
-`update_cabinet`, `set_run_break`, `apply_to_all`), **audit** (`audit_project`,
-`project_summary`), **build** (`get_cut_list`, `get_sheets`, `get_build_steps`,
-`get_shopping_list`), and **explain** (`explain`, `list_materials`) — plus
-`cabinets://` resources and one prompt per persona. Full catalog: [`mcp/README.md`](mcp/README.md).
+### Use it with the hosted app — no clone needed
 
-**Live preview.** Edits **autosave** (no explicit save step), and with `npm run
-dev` running, the agent's changes stream into the browser in real time — layout,
-cut list, sheets and 3D update live, no reload. A dev-only Vite plugin watches
-the project file and pushes it over the HMR socket; the production build is
-untouched.
+1. Open **[llmer.github.io/cabinets](https://llmer.github.io/cabinets/)** and
+   click **Agent** in the header.
+2. Add the server to your agent (the popover has a copy button):
+
+   ```bash
+   claude mcp add cabinets -- npx -y github:llmer/cabinets
+   ```
+
+3. Click **Connect**. The page now follows your agent session live — ask it to
+   lay out a kitchen and watch the layout, cut list, sheets and 3D update as it
+   works. Your in-page edits flow back to the agent too.
+
+How it works: your MCP client spawns the server locally (npx builds it straight
+from this repo — nothing is published or hosted), and the server opens a
+WebSocket **bridge on `127.0.0.1:5178`** that the page dials out to. The
+connection is strictly opt-in, loopback-only, and origin-checked (only this
+app's origins may connect), and project data never travels anywhere except
+between that tab and the local process. Sync is last-write-wins with undo — see
+[`mcp/README.md`](mcp/README.md) for the protocol and the
+`CABINETS_BRIDGE*` environment knobs.
+
+### Working in the repo
+
+The server is registered in [`.mcp.json`](.mcp.json); open the repo in an
+MCP-capable client and enable the **cabinets** server, or run `npm run mcp`
+and point your own client at stdio. It exposes ~27 tools across four jobs —
+**design** (`add_cabinet`, `update_cabinet`, `set_run_break`, `apply_to_all`),
+**audit** (`audit_project`, `project_summary`), **build** (`get_cut_list`,
+`get_sheets`, `get_build_steps`, `get_shopping_list`), and **explain**
+(`explain`, `list_materials`) — plus `cabinets://` resources and one prompt per
+persona. Full catalog: [`mcp/README.md`](mcp/README.md).
+
+**Live preview.** Edits **autosave** (no explicit save step). With `npm run dev`
+running, changes also stream over the dev server's HMR socket (a dev-only Vite
+plugin); the agent bridge above works in every build, dev or hosted.
 
 ## Features
 
