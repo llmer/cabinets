@@ -2,7 +2,7 @@
  * Live smoke test for the MCP server.
  *
  * Spawns the real server over stdio using the official MCP client, runs a full
- * designer → auditor → builder round-trip against the bundled maple-v2 project,
+ * designer → auditor → builder round-trip against the bundled demo-kitchen project,
  * and asserts the responses. Exits non-zero on any failure. Run: `npm run mcp:smoke`.
  *
  * This is a subprocess integration check, deliberately OUTSIDE the vitest suite
@@ -17,14 +17,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const fixture = resolve(root, "mcp", "fixtures", "maple-v2.cabinets.json");
+const fixture = resolve(root, "mcp", "fixtures", "demo-kitchen.cabinets.json");
 // Work on a throwaway COPY — autosave writes the opened file, so we must never
 // point the test at the committed fixture. Also a throwaway live file.
 const liveDir = mkdtempSync(join(tmpdir(), "cab-smoke-"));
 const liveFile = join(liveDir, "live.cabinets.json");
-const maple = join(liveDir, "maple-copy.cabinets.json");
+const project = join(liveDir, "demo-kitchen-copy.cabinets.json");
 const fixtureBefore = readFileSync(fixture, "utf8");
-copyFileSync(fixture, maple);
+copyFileSync(fixture, project);
 
 let failures = 0;
 const results: string[] = [];
@@ -71,10 +71,10 @@ async function main(): Promise<void> {
   const prompts = await client.listPrompts();
   check("prompts/list has the 3 personas", prompts.prompts.length === 3, prompts.prompts.map((p) => p.name).join(","));
 
-  // --- designer / auditor: open + inspect maple-v2 ---
-  const opened = await client.callTool({ name: "open_project", arguments: { path: maple } });
+  // --- designer / auditor: open + inspect demo-kitchen ---
+  const opened = await client.callTool({ name: "open_project", arguments: { path: project } });
   const openedText = textOf(opened as never);
-  check("open_project loads maple-v2", !opened.isError && /maple-v2/.test(openedText), openedText.split("\n")[0]);
+  check("open_project loads demo-kitchen", !opened.isError && /demo-kitchen/.test(openedText), openedText.split("\n")[0]);
 
   const summary = textOf((await client.callTool({ name: "project_summary", arguments: {} })) as never);
   check("project_summary reports 3 cabinets", /Cabinets:\s+3/.test(summary));
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
   check("list_cabinets shows B1", /B1/.test(list));
 
   const audit = textOf((await client.callTool({ name: "audit_project", arguments: {} })) as never);
-  check("audit_project runs on maple-v2", /Audit:/.test(audit), audit.split("\n")[0]);
+  check("audit_project runs on demo-kitchen", /Audit:/.test(audit), audit.split("\n")[0]);
 
   // --- designer: mutate ---
   const add = await client.callTool({
